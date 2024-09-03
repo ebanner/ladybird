@@ -100,9 +100,13 @@ static CSSPixelRect measure_scrollable_overflow(Box const& box)
     //   and whose border boxes are positioned not wholly in the negative scrollable overflow region,
     //   FIXME: accounting for transforms by projecting each box onto the plane of the element that establishes its 3D rendering context. [CSS3-TRANSFORMS]
     if (!box.children_are_inline()) {
-        box.for_each_child_of_type<Box>([&box, &scrollable_overflow_rect, &content_overflow_rect](Box const& child) {
+        box.for_each_in_subtree_of_type<Box>([&box, &scrollable_overflow_rect, &content_overflow_rect](Box const& child) {
             if (!child.paintable_box())
-                return IterationDecision::Continue;
+                return TraversalDecision::Continue;
+
+            if (child.containing_block() != &box) {
+                return TraversalDecision::Continue;
+            }
 
             auto child_border_box = child.paintable_box()->absolute_border_box_rect();
             // NOTE: Here we check that the child is not wholly in the negative scrollable overflow region.
@@ -123,7 +127,7 @@ static CSSPixelRect measure_scrollable_overflow(Box const& box)
                     scrollable_overflow_rect.unite_vertically(child_scrollable_overflow);
             }
 
-            return IterationDecision::Continue;
+            return TraversalDecision::Continue;
         });
     } else {
         box.for_each_child([&scrollable_overflow_rect, &content_overflow_rect](Node const& child) {
