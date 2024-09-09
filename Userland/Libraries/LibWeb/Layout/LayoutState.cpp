@@ -71,6 +71,17 @@ LayoutState::UsedValues const& LayoutState::get(NodeWithStyle const& node) const
     return *new_used_values_ptr;
 }
 
+static void dfs(Box const& box, Box const& node)
+{
+    if (node.containing_block() == &box) {
+        dbgln("  CB: {}->{}", box.debug_description(), node.debug_description());
+    }
+    node.for_each_child_of_type<Box>([&box](Box const& child) {
+        dfs(box, child);
+        return IterationDecision::Continue;
+    });
+}
+
 // https://www.w3.org/TR/css-overflow-3/#scrollable-overflow
 static CSSPixelRect measure_scrollable_overflow(Box const& box)
 {
@@ -99,6 +110,9 @@ static CSSPixelRect measure_scrollable_overflow(Box const& box)
     // - The border boxes of all boxes for which it is the containing block
     //   and whose border boxes are positioned not wholly in the negative scrollable overflow region,
     //   FIXME: accounting for transforms by projecting each box onto the plane of the element that establishes its 3D rendering context. [CSS3-TRANSFORMS]
+    // dbgln(box.debug_description());
+    // dfs(box, box);
+    // dbgln("");
     if (!box.children_are_inline()) {
         box.for_each_in_subtree_of_type<Box>([&box, &scrollable_overflow_rect, &content_overflow_rect](Box const& child) {
             if (!child.paintable_box())
