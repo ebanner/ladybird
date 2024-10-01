@@ -1030,7 +1030,7 @@ void TableFormattingContext::position_row_boxes()
 {
     auto const& table_state = m_state.get(table_box());
 
-    CSSPixels row_top_offset = table_state.offset.y() + table_state.padding_top + border_spacing_vertical();
+    CSSPixels row_top_offset = table_state.border_top + table_state.padding_top + border_spacing_vertical();
     CSSPixels row_left_offset = table_state.border_left + table_state.padding_left + border_spacing_horizontal();
     for (size_t y = 0; y < m_rows.size(); y++) {
         auto& row = m_rows[y];
