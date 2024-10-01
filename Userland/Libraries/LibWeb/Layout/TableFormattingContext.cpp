@@ -1047,8 +1047,6 @@ void TableFormattingContext::position_row_boxes()
         row_top_offset += row_state.content_height() + border_spacing_vertical();
     }
 
-    dbgln("table_state.border_top: {}", table_state.border_top);
-    dbgln("table_state.padding_top: {}", table_state.padding_top);
     CSSPixels row_group_top_offset = table_state.border_top + table_state.padding_top + border_spacing_vertical();
     CSSPixels row_group_left_offset = table_state.border_left + table_state.padding_left + border_spacing_horizontal();
     TableGrid::for_each_child_box_matching(table_box(), TableGrid::is_table_row_group, [&](auto& row_group_box) {
