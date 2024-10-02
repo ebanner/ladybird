@@ -1037,9 +1037,9 @@ void TableFormattingContext::position_row_boxes()
         auto& row_state = m_state.get_mutable(row.box);
         CSSPixels row_width = 0;
         for (auto& column : m_columns) {
-            row_width += column.used_width + border_spacing_horizontal();
+            row_width += column.used_width;
         }
-        row_width -= border_spacing_horizontal(); // fencepost
+        row_width += (m_columns.size()-1) * border_spacing_horizontal();
 
         row_state.set_content_height(row.final_height);
         row_state.set_content_width(row_width);
@@ -1058,12 +1058,14 @@ void TableFormattingContext::position_row_boxes()
         row_group_box_state.set_content_x(row_group_left_offset);
         row_group_box_state.set_content_y(row_group_top_offset);
 
+        int num_rows = 0;
         TableGrid::for_each_child_box_matching(row_group_box, TableGrid::is_table_row, [&](auto& row) {
             auto const& row_state = m_state.get(row);
-            row_group_height += row_state.border_box_height() + border_spacing_vertical();
+            row_group_height += row_state.border_box_height();
             row_group_width = max(row_group_width, row_state.border_box_width());
+            num_rows += 1;
         });
-        row_group_height -= border_spacing_vertical(); // fencepost
+        row_group_height += (num_rows-1) * border_spacing_vertical();
 
         row_group_box_state.set_content_height(row_group_height);
         row_group_box_state.set_content_width(row_group_width);
