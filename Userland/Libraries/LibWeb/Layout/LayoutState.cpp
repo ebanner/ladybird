@@ -20,7 +20,7 @@
 #define DUMP_CONTAINING_BLOCK_TREE 0
 #define DUMP_LAYOUT_TREE 0
 #define DUMP_SCROLLABLE_OVERFLOW_CHANGES 1
-#define DUMP_CHILD 0
+#define DUMP_CHILD_BORDER_BOX 0
 
 namespace Web::Layout {
 
@@ -102,25 +102,31 @@ static void dfs_overflow(Box const& box, int indent)
     });
 }
 
-static void dfs_blocks(NodeWithStyle const& node, int indent)
+static void dfs_blocks(Painting::PaintableBox const& node, int indent)
 {
-    if (node.containing_block()) {
-        dbgln("{:>{}}{} -CB-> {}", "", indent, node.containing_block()->debug_description(), node.debug_description());
+    auto& box = node.layout_box();
+    if (box.containing_block()) {
+        dbgln("{:>{}}{} -CB-> {}", "", indent, box.containing_block()->debug_description(), box.debug_description());
     } else {
-        dbgln("{:>{}}{} -CB-> {}", "", indent, nullptr, node.debug_description());
+        dbgln("{:>{}}{} -CB-> {}", "", indent, nullptr, box.debug_description());
     }
 
-    node.for_each_child_of_type<NodeWithStyle>([&indent](NodeWithStyle const& child) {
+    node.for_each_child_of_type<Painting::PaintableBox>([&indent](Painting::PaintableBox const& child) {
         dfs_blocks(child, indent + 2);
         return IterationDecision::Continue;
     });
 }
 
-static void dfs_layout_tree(NodeWithStyle const& node, int indent)
+static void dfs_layout_tree(Painting::PaintableBox const& node, int indent)
 {
-    dbgln("{:>{}}{}", "", indent, node.debug_description());
+    auto& box = node.layout_box();
+    if (node.has_scrollable_overflow()) {
+        auto scrollable_overflow_rect = node.scrollable_overflow_rect().value();
+        dbgln("{:>{}}{} -> overflow: {}, {}, [{},{}]", "", indent, box.debug_description(), scrollable_overflow_rect.x(), scrollable_overflow_rect.y(), scrollable_overflow_rect.width(), scrollable_overflow_rect.height());
+    } else
+        dbgln("{:>{}}{}", "", indent, box.debug_description());
 
-    node.for_each_child_of_type<NodeWithStyle>([&indent](NodeWithStyle const& child) {
+    node.for_each_child_of_type<Painting::PaintableBox>([&indent](Painting::PaintableBox const& child) {
         dfs_layout_tree(child, indent + 2);
         return IterationDecision::Continue;
     });
@@ -143,10 +149,6 @@ static CSSPixelRect measure_scrollable_overflow(Box const& box, int indent = 0)
     auto scrollable_overflow_rect = paintable_box.absolute_padding_box_rect();
     auto scrollable_overflow_rect_copy = scrollable_overflow_rect;
 
-    // dbgln("{}: scrollable_overflow_rect = paintable_box.absolute_padding_box_rect: {}, {}, [{},{}]", box.debug_description(), scrollable_overflow_rect.x(), scrollable_overflow_rect.y(), scrollable_overflow_rect.width(), scrollable_overflow_rect.height());
-
-    // dbgln("{:>{}}{}: BEGINNING scrollable_overflow_rect: {}, {}, [{},{}]", "", indent, box.debug_description(), scrollable_overflow_rect.x(), scrollable_overflow_rect.y(), scrollable_overflow_rect.width(), scrollable_overflow_rect.height());
-
     // - All line boxes directly contained by the scroll container.
     if (is<Painting::PaintableWithLines>(box.paintable())) {
         for (auto const& fragment : static_cast<Painting::PaintableWithLines const&>(*box.paintable()).fragments()) {
@@ -160,36 +162,34 @@ static CSSPixelRect measure_scrollable_overflow(Box const& box, int indent = 0)
         dbgln_if(DUMP_SCROLLABLE_OVERFLOW_CHANGES, "{:>{}}{}: {}, {}, [{},{}]", "", indent, box.debug_description(), scrollable_overflow_rect.x(), scrollable_overflow_rect.y(), scrollable_overflow_rect.width(), scrollable_overflow_rect.height());
     }
 
-    // dbgln("{}: scrollable_overflow_rect = scrollable_overflow_rect.united(fragment.absolute_rect()): {}, {}, [{},{}]", box.debug_description(), scrollable_overflow_rect.x(), scrollable_overflow_rect.y(), scrollable_overflow_rect.width(), scrollable_overflow_rect.height());
-
-    // dbgln("{:>{}}{}: scrollable_overflow_rect AFTER fragments: {}, {}, [{},{}]", "", indent, box.debug_description(), scrollable_overflow_rect.x(), scrollable_overflow_rect.y(), scrollable_overflow_rect.width(), scrollable_overflow_rect.height());
-
     auto content_overflow_rect = scrollable_overflow_rect;
 
     // - The border boxes of all boxes for which it is the containing block
     //   and whose border boxes are positioned not wholly in the negative scrollable overflow region,
     //   FIXME: accounting for transforms by projecting each box onto the plane of the element that establishes its 3D rendering context. [CSS3-TRANSFORMS]
-    // dbgln("{:>{}}{}: CONTAINS:", "", indent, box.debug_description());
-    // dfs_containing(box, box, indent);
-    // dbgln("");
-    auto* node = static_cast<NodeWithStyle const*>(&box);
-    while (node->parent()) {
-        node = node->parent();
+    // auto* node = static_cast<NodeWithStyle const*>(&box);
+    auto* node = box.dom_node();
+    if (node) {
+        while (node->parent()) {
+            node = node->parent();
+        }
+        auto& document = *node;
+        auto* document_paintable_box = document.paintable_box();
+        if (DUMP_LAYOUT_TREE) {
+            dbgln("LAYOUT TREE:");
+            dfs_layout_tree(*document_paintable_box, 0);
+            dbgln("");
+        }
+        if (DUMP_CONTAINING_BLOCK_TREE) {
+            dbgln("");
+            dbgln("CONTAINING BLOCK TREE:");
+            dfs_blocks(*document_paintable_box, 0);
+            dbgln("");
+        }
     }
-    auto& document = *node;
-    if (DUMP_LAYOUT_TREE) {
-        dbgln("LAYOUT TREE:");
-        dfs_layout_tree(document, 0);
-        dbgln("");
-    }
-    if (DUMP_CONTAINING_BLOCK_TREE) {
-        dbgln("");
-        dbgln("CONTAINING BLOCK TREE:");
-        dfs_blocks(document, 0);
-        dbgln("");
-    }
+
     if (!box.children_are_inline()) {
-        box.for_each_child_of_type<Box>([&box, &indent, &scrollable_overflow_rect_copy, &scrollable_overflow_rect, &content_overflow_rect](Box const& child) {
+        box.for_each_child_of_type<Box>([&box, &indent, &scrollable_overflow_rect, &scrollable_overflow_rect_copy, &content_overflow_rect](Box const& child) {
             if (!child.paintable_box())
                 return IterationDecision::Continue;
 
@@ -208,36 +208,31 @@ static CSSPixelRect measure_scrollable_overflow(Box const& box, int indent = 0)
                 dbgln_if(DUMP_SCROLLABLE_OVERFLOW_CHANGES, "{:>{}}{}: {}, {}, [{},{}]", "", indent, box.debug_description(), scrollable_overflow_rect.x(), scrollable_overflow_rect.y(), scrollable_overflow_rect.width(), scrollable_overflow_rect.height());
             }
 
-            if (DUMP_CHILD) {
+            if (DUMP_CHILD_BORDER_BOX) {
                 dbgln("{:>{}}{}: CHILD BORDER BOX: {}: {}, {}, [{},{}]", "", indent, box.debug_description(), child.debug_description(), child_border_box.x(), child_border_box.y(), child_border_box.width(), child_border_box.height());
                 dbgln("{:>{}}{}: {}, {}, [{},{}]", "", indent, box.debug_description(), scrollable_overflow_rect_copy.x(), scrollable_overflow_rect_copy.y(), scrollable_overflow_rect_copy.width(), scrollable_overflow_rect_copy.height());
                 dbgln("{:>{}}{}: {}, {}, [{},{}]", "", indent, box.debug_description(), scrollable_overflow_rect.x(), scrollable_overflow_rect.y(), scrollable_overflow_rect.width(), scrollable_overflow_rect.height());
                 dbgln("");
             }
 
-            // dbgln("{}: scrollable_overflow_rect = scrollable_overflow_rect.united(child_border_box): {}, {}, [{},{}]", box.debug_description(), scrollable_overflow_rect.x(), scrollable_overflow_rect.y(), scrollable_overflow_rect.width(), scrollable_overflow_rect.height());
-
             // - The scrollable overflow areas of all of the above boxes
             //   (including zero-area boxes and accounting for transforms as described above),
             //   provided they themselves have overflow: visible (i.e. do not themselves trap the overflow)
             //   and that scrollable overflow is not already clipped (e.g. by the clip property or the contain property).
             if (is<Viewport>(box) || child.computed_values().overflow_x() == CSS::Overflow::Visible || child.computed_values().overflow_y() == CSS::Overflow::Visible) {
-                // dbgln("{:>{}}{}: scrollable_overflow_rect BEFORE: {}, {}, [{},{}]", "", indent, box.debug_description(), scrollable_overflow_rect.x(), scrollable_overflow_rect.y(), scrollable_overflow_rect.width(), scrollable_overflow_rect.height());
-                // dbgln("{:>{}}{}: calling measure_scrollable_overflow on {}", "", indent, box.debug_description(), child.debug_description());
                 auto child_scrollable_overflow = measure_scrollable_overflow(child, indent + 2);
                 if (is<Viewport>(box) || child.computed_values().overflow_x() == CSS::Overflow::Visible)
                     scrollable_overflow_rect.unite_horizontally(child_scrollable_overflow);
                 if (is<Viewport>(box) || child.computed_values().overflow_y() == CSS::Overflow::Visible) {
                     scrollable_overflow_rect.unite_vertically(child_scrollable_overflow);
                 }
-                // dbgln("{}: scrollable_overflow_rect = scrollable_overflow_rect.unite_vertically(child_scrollable_overflow): {}, {}, [{},{}]", box.debug_description(), scrollable_overflow_rect.x(), scrollable_overflow_rect.y(), scrollable_overflow_rect.width(), scrollable_overflow_rect.height());
                 if (scrollable_overflow_rect != scrollable_overflow_rect_copy) {
                     dbgln_if(DUMP_SCROLLABLE_OVERFLOW_CHANGES, "{:>{}}{}: +++CHILD SCROLLABLE OVERFLOW: {}: {}, {}, [{},{}]", "", indent, box.debug_description(), child.debug_description(), child_scrollable_overflow.x(), child_scrollable_overflow.y(), child_scrollable_overflow.width(), child_scrollable_overflow.height());
                     dbgln_if(DUMP_SCROLLABLE_OVERFLOW_CHANGES, "{:>{}}{}: {}, {}, [{},{}]", "", indent, box.debug_description(), scrollable_overflow_rect_copy.x(), scrollable_overflow_rect_copy.y(), scrollable_overflow_rect_copy.width(), scrollable_overflow_rect_copy.height());
                     dbgln_if(DUMP_SCROLLABLE_OVERFLOW_CHANGES, "{:>{}}{}: {}, {}, [{},{}]", "", indent, box.debug_description(), scrollable_overflow_rect.x(), scrollable_overflow_rect.y(), scrollable_overflow_rect.width(), scrollable_overflow_rect.height());
                 }
 
-                if (DUMP_CHILD) {
+                if (DUMP_CHILD_BORDER_BOX) {
                     dbgln("{:>{}}{}: CHILD SCROLLABLE OVERFLOW: {}: {}, {}, [{},{}]", "", indent, box.debug_description(), child.debug_description(), child_scrollable_overflow.x(), child_scrollable_overflow.y(), child_scrollable_overflow.width(), child_scrollable_overflow.height());
                     dbgln("{:>{}}{}: {}, {}, [{},{}]", "", indent, box.debug_description(), scrollable_overflow_rect_copy.x(), scrollable_overflow_rect_copy.y(), scrollable_overflow_rect_copy.width(), scrollable_overflow_rect_copy.height());
                     dbgln("{:>{}}{}: {}, {}, [{},{}]", "", indent, box.debug_description(), scrollable_overflow_rect.x(), scrollable_overflow_rect.y(), scrollable_overflow_rect.width(), scrollable_overflow_rect.height());
