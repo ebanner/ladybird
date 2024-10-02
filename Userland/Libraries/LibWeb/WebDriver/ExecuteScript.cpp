@@ -31,6 +31,7 @@
 #include <LibWeb/Page/Page.h>
 #include <LibWeb/Platform/EventLoopPlugin.h>
 #include <LibWeb/WebDriver/Contexts.h>
+#include <LibWeb/WebDriver/ElementReference.h>
 #include <LibWeb/WebDriver/ExecuteScript.h>
 
 namespace Web::WebDriver {
@@ -109,7 +110,25 @@ static ErrorOr<JsonValue, ExecuteScriptResultType> internal_json_clone_algorithm
         return ExecuteScriptResultType::JavaScriptError;
 
     // FIXME: -> a collection
-    // FIXME: -> instance of element
+
+    // -> instance of element
+    if (value.is_object() && is<DOM::Element>(value.as_object())) {
+        auto const& element = static_cast<DOM::Element const&>(value.as_object());
+
+        // If the element is stale, return error with error code stale element reference.
+        if (is_element_stale(element)) {
+            return ExecuteScriptResultType::StaleElement;
+        }
+        // Otherwise:
+        else {
+            // 1. Let reference be the web element reference object for session and value.
+            auto reference = web_element_reference_object(element);
+
+            // 2. Return success with data reference.
+            return reference;
+        }
+    }
+
     // FIXME: -> instance of shadow root
 
     // -> a WindowProxy object
@@ -222,13 +241,12 @@ static ErrorOr<JsonValue, ExecuteScriptResultType> clone_an_object(JS::Realm& re
 }
 
 // https://w3c.github.io/webdriver/#dfn-execute-a-function-body
-static JS::ThrowCompletionOr<JS::Value> execute_a_function_body(Web::Page& page, ByteString const& body, JS::MarkedVector<JS::Value> parameters)
+static JS::ThrowCompletionOr<JS::Value> execute_a_function_body(HTML::BrowsingContext const& browsing_context, ByteString const& body, JS::MarkedVector<JS::Value> parameters)
 {
     // FIXME: If at any point during the algorithm a user prompt appears, immediately return Completion { [[Type]]: normal, [[Value]]: null, [[Target]]: empty }, but continue to run the other steps of this algorithm in parallel.
 
     // 1. Let window be the associated window of the current browsing context’s active document.
-    // FIXME: This will need adjusting when WebDriver supports frames.
-    auto window = page.top_level_browsing_context().active_document()->window();
+    auto window = browsing_context.active_document()->window();
 
     // 2. Let environment settings be the environment settings object for window.
     auto& environment_settings = Web::HTML::relevant_settings_object(*window);
@@ -283,38 +301,90 @@ static JS::ThrowCompletionOr<JS::Value> execute_a_function_body(Web::Page& page,
     return completion;
 }
 
-ExecuteScriptResultSerialized execute_script(Web::Page& page, ByteString const& body, JS::MarkedVector<JS::Value> arguments, Optional<u64> const& timeout_ms)
+class HeapTimer : public JS::Cell {
+    JS_CELL(HeapTimer, JS::Cell);
+    JS_DECLARE_ALLOCATOR(HeapTimer);
+
+public:
+    explicit HeapTimer()
+        : m_timer(Core::Timer::create())
+    {
+    }
+
+    virtual ~HeapTimer() override = default;
+
+    void start(u64 timeout_ms, JS::NonnullGCPtr<OnScriptComplete> on_timeout)
+    {
+        m_on_timeout = on_timeout;
+
+        m_timer->on_timeout = [this]() {
+            m_timed_out = true;
+
+            if (m_on_timeout) {
+                auto error_object = JsonObject {};
+                error_object.set("name", "Error");
+                error_object.set("message", "Script Timeout");
+
+                m_on_timeout->function()({ ExecuteScriptResultType::Timeout, move(error_object) });
+                m_on_timeout = nullptr;
+            }
+        };
+
+        m_timer->set_interval(static_cast<int>(timeout_ms));
+        m_timer->set_single_shot(true);
+        m_timer->start();
+    }
+
+    void stop()
+    {
+        m_on_timeout = nullptr;
+        m_timer->stop();
+    }
+
+    bool is_timed_out() const { return m_timed_out; }
+
+private:
+    virtual void visit_edges(JS::Cell::Visitor& visitor) override
+    {
+        Base::visit_edges(visitor);
+        visitor.visit(m_on_timeout);
+    }
+
+    NonnullRefPtr<Core::Timer> m_timer;
+    JS::GCPtr<OnScriptComplete> m_on_timeout;
+    bool m_timed_out { false };
+};
+
+JS_DEFINE_ALLOCATOR(HeapTimer);
+
+void execute_script(HTML::BrowsingContext const& browsing_context, ByteString body, JS::MarkedVector<JS::Value> arguments, Optional<u64> const& timeout_ms, JS::NonnullGCPtr<OnScriptComplete> on_complete)
 {
-    auto* document = page.top_level_browsing_context().active_document();
-    auto* window = page.top_level_browsing_context().active_window();
-    auto& realm = window->realm();
-    auto& vm = window->vm();
+    auto const* document = browsing_context.active_document();
+    auto& realm = document->realm();
+    auto& vm = document->vm();
 
     // 5. Let timer be a new timer.
-    auto timeout_flag = false;
-    auto timer = Core::Timer::create();
+    auto timer = vm.heap().allocate<HeapTimer>(realm);
 
     // 6. If timeout is not null:
     if (timeout_ms.has_value()) {
         // 1. Start the timer with timer and timeout.
-        timer->on_timeout = [&]() {
-            timeout_flag = true;
-        };
-        timer->set_interval(timeout_ms.value());
-        timer->set_single_shot(true);
+        timer->start(timeout_ms.value(), on_complete);
     }
 
     // AD-HOC: An execution context is required for Promise creation hooks.
-    HTML::TemporaryExecutionContext execution_context { document->relevant_settings_object() };
+    HTML::TemporaryExecutionContext execution_context { document->relevant_settings_object(), HTML::TemporaryExecutionContext::CallbacksEnabled::Yes };
 
     // 7. Let promise be a new Promise.
     auto promise_capability = WebIDL::create_promise(realm);
     JS::NonnullGCPtr promise { verify_cast<JS::Promise>(*promise_capability->promise()) };
 
     // 8. Run the following substeps in parallel:
-    Platform::EventLoopPlugin::the().deferred_invoke([&realm, &page, promise_capability, promise, body = move(body), arguments = move(arguments)]() mutable {
+    Platform::EventLoopPlugin::the().deferred_invoke([&realm, &browsing_context, promise_capability, document, promise, body = move(body), arguments = move(arguments)]() mutable {
+        HTML::TemporaryExecutionContext execution_context { document->relevant_settings_object() };
+
         // 1. Let scriptPromise be the result of promise-calling execute a function body, with arguments body and arguments.
-        auto script_result = execute_a_function_body(page, body, move(arguments));
+        auto script_result = execute_a_function_body(browsing_context, body, move(arguments));
 
         // 2. Upon fulfillment of scriptPromise with value v, resolve promise with value v.
         if (script_result.has_value()) {
@@ -328,69 +398,65 @@ ExecuteScriptResultSerialized execute_script(Web::Page& page, ByteString const& 
     });
 
     // 9. Wait until promise is resolved, or timer's timeout fired flag is set, whichever occurs first.
-    vm.custom_data()->spin_event_loop_until([&] {
-        return timeout_flag || promise->state() != JS::Promise::State::Pending;
+    auto reaction_steps = JS::create_heap_function(vm.heap(), [&realm, promise, timer, on_complete](JS::Value) -> WebIDL::ExceptionOr<JS::Value> {
+        if (timer->is_timed_out())
+            return JS::js_undefined();
+        timer->stop();
+
+        auto json_value_or_error = json_clone(realm, promise->result());
+        if (json_value_or_error.is_error()) {
+            auto error_object = JsonObject {};
+            error_object.set("name", "Error");
+            error_object.set("message", "Could not clone result value");
+
+            on_complete->function()({ ExecuteScriptResultType::JavaScriptError, move(error_object) });
+        }
+
+        // 10. If promise is still pending and timer's timeout fired flag is set, return error with error code script timeout.
+        // NOTE: This is handled by the HeapTimer.
+
+        // 11. If promise is fulfilled with value v, let result be JSON clone with session and v, and return success with data result.
+        else if (promise->state() == JS::Promise::State::Fulfilled) {
+            on_complete->function()({ ExecuteScriptResultType::PromiseResolved, json_value_or_error.release_value() });
+        }
+
+        // 12. If promise is rejected with reason r, let result be JSON clone with session and r, and return error with error code javascript error and data result.
+        else if (promise->state() == JS::Promise::State::Rejected) {
+            on_complete->function()({ ExecuteScriptResultType::PromiseRejected, json_value_or_error.release_value() });
+        }
+
+        return JS::js_undefined();
     });
 
-    // 10. If promise is still pending and timer's timeout fired flag is set, return error with error code script timeout.
-    if (timeout_flag && promise->state() == JS::Promise::State::Pending) {
-        auto error_object = JsonObject {};
-        error_object.set("name", "Error");
-        error_object.set("message", "Script Timeout");
-        return { ExecuteScriptResultType::Timeout, move(error_object) };
-    }
-
-    auto json_value_or_error = json_clone(realm, promise->result());
-    if (json_value_or_error.is_error()) {
-        auto error_object = JsonObject {};
-        error_object.set("name", "Error");
-        error_object.set("message", "Could not clone result value");
-        return { ExecuteScriptResultType::JavaScriptError, move(error_object) };
-    }
-
-    // 11. If promise is fulfilled with value v, let result be JSON clone with session and v, and return success with data result.
-    if (promise->state() == JS::Promise::State::Fulfilled) {
-        return { ExecuteScriptResultType::PromiseResolved, json_value_or_error.release_value() };
-    }
-
-    // 12. If promise is rejected with reason r, let result be JSON clone with session and r, and return error with error code javascript error and data result.
-    if (promise->state() == JS::Promise::State::Rejected) {
-        return { ExecuteScriptResultType::PromiseRejected, json_value_or_error.release_value() };
-    }
-
-    VERIFY_NOT_REACHED();
+    WebIDL::react_to_promise(promise_capability, reaction_steps, reaction_steps);
 }
 
-ExecuteScriptResultSerialized execute_async_script(Web::Page& page, ByteString const& body, JS::MarkedVector<JS::Value> arguments, Optional<u64> const& timeout_ms)
+void execute_async_script(HTML::BrowsingContext const& browsing_context, ByteString body, JS::MarkedVector<JS::Value> arguments, Optional<u64> const& timeout_ms, JS::NonnullGCPtr<OnScriptComplete> on_complete)
 {
-    auto* document = page.top_level_browsing_context().active_document();
-    auto* window = page.top_level_browsing_context().active_window();
-    auto& realm = window->realm();
-    auto& vm = window->vm();
+    auto const* document = browsing_context.active_document();
+    auto& realm = document->realm();
+    auto& vm = document->vm();
 
     // 5. Let timer be a new timer.
-    IGNORE_USE_IN_ESCAPING_LAMBDA auto timeout_flag = false;
-    auto timer = Core::Timer::create();
+    auto timer = vm.heap().allocate<HeapTimer>(realm);
 
     // 6. If timeout is not null:
     if (timeout_ms.has_value()) {
         // 1. Start the timer with timer and timeout.
-        timer->on_timeout = [&]() {
-            timeout_flag = true;
-        };
-        timer->set_interval(timeout_ms.value());
-        timer->set_single_shot(true);
+        timer->start(timeout_ms.value(), on_complete);
     }
 
     // AD-HOC: An execution context is required for Promise creation hooks.
-    HTML::TemporaryExecutionContext execution_context { document->relevant_settings_object() };
+    HTML::TemporaryExecutionContext execution_context { document->relevant_settings_object(), HTML::TemporaryExecutionContext::CallbacksEnabled::Yes };
 
     // 7. Let promise be a new Promise.
     auto promise_capability = WebIDL::create_promise(realm);
     JS::NonnullGCPtr promise { verify_cast<JS::Promise>(*promise_capability->promise()) };
 
     // 8. Run the following substeps in parallel:
-    Platform::EventLoopPlugin::the().deferred_invoke([&vm, &realm, &page, &timeout_flag, promise_capability, promise, body = move(body), arguments = move(arguments)]() mutable {
+    Platform::EventLoopPlugin::the().deferred_invoke([&vm, &realm, &browsing_context, timer, document, promise_capability, promise, body = move(body), arguments = move(arguments)]() mutable {
+        HTML::TemporaryExecutionContext execution_context { document->relevant_settings_object() };
+
         // 1. Let resolvingFunctions be CreateResolvingFunctions(promise).
         auto resolving_functions = promise->create_resolving_functions();
 
@@ -399,7 +465,7 @@ ExecuteScriptResultSerialized execute_async_script(Web::Page& page, ByteString c
 
         // 3. Let result be the result of calling execute a function body, with arguments body and arguments.
         // FIXME: 'result' -> 'scriptResult' (spec issue)
-        auto script_result = execute_a_function_body(page, body, move(arguments));
+        auto script_result = execute_a_function_body(browsing_context, body, move(arguments));
 
         // 4. If scriptResult.[[Type]] is not normal, then reject promise with value scriptResult.[[Value]], and abort these steps.
         // NOTE: Prior revisions of this specification did not recognize the return value of the provided script.
@@ -434,7 +500,7 @@ ExecuteScriptResultSerialized execute_async_script(Web::Page& page, ByteString c
         auto& script_promise = static_cast<JS::Promise&>(*script_promise_or_error.value());
 
         vm.custom_data()->spin_event_loop_until([&] {
-            return timeout_flag || script_promise.state() != JS::Promise::State::Pending;
+            return timer->is_timed_out() || script_promise.state() != JS::Promise::State::Pending;
         });
 
         // 10. Upon fulfillment of scriptPromise with value v, resolve promise with value v.
@@ -447,37 +513,37 @@ ExecuteScriptResultSerialized execute_async_script(Web::Page& page, ByteString c
     });
 
     // 9. Wait until promise is resolved, or timer's timeout fired flag is set, whichever occurs first.
-    vm.custom_data()->spin_event_loop_until([&] {
-        return timeout_flag || promise->state() != JS::Promise::State::Pending;
+    auto reaction_steps = JS::create_heap_function(vm.heap(), [&realm, promise, timer, on_complete](JS::Value) -> WebIDL::ExceptionOr<JS::Value> {
+        if (timer->is_timed_out())
+            return JS::js_undefined();
+        timer->stop();
+
+        auto json_value_or_error = json_clone(realm, promise->result());
+        if (json_value_or_error.is_error()) {
+            auto error_object = JsonObject {};
+            error_object.set("name", "Error");
+            error_object.set("message", "Could not clone result value");
+
+            on_complete->function()({ ExecuteScriptResultType::JavaScriptError, move(error_object) });
+        }
+
+        // 10. If promise is still pending and timer's timeout fired flag is set, return error with error code script timeout.
+        // NOTE: This is handled by the HeapTimer.
+
+        // 11. If promise is fulfilled with value v, let result be JSON clone with session and v, and return success with data result.
+        else if (promise->state() == JS::Promise::State::Fulfilled) {
+            on_complete->function()({ ExecuteScriptResultType::PromiseResolved, json_value_or_error.release_value() });
+        }
+
+        // 12. If promise is rejected with reason r, let result be JSON clone with session and r, and return error with error code javascript error and data result.
+        else if (promise->state() == JS::Promise::State::Rejected) {
+            on_complete->function()({ ExecuteScriptResultType::PromiseRejected, json_value_or_error.release_value() });
+        }
+
+        return JS::js_undefined();
     });
 
-    // 10. If promise is still pending and timer's timeout fired flag is set, return error with error code script
-    if (timeout_flag && promise->state() == JS::Promise::State::Pending) {
-        auto error_object = JsonObject {};
-        error_object.set("name", "Error");
-        error_object.set("message", "Script Timeout");
-        return { ExecuteScriptResultType::Timeout, move(error_object) };
-    }
-
-    auto json_value_or_error = json_clone(realm, promise->result());
-    if (json_value_or_error.is_error()) {
-        auto error_object = JsonObject {};
-        error_object.set("name", "Error");
-        error_object.set("message", "Could not clone result value");
-        return { ExecuteScriptResultType::JavaScriptError, move(error_object) };
-    }
-
-    // 11. If promise is fulfilled with value v, let result be JSON clone with session and v, and return success with data result.
-    if (promise->state() == JS::Promise::State::Fulfilled) {
-        return { ExecuteScriptResultType::PromiseResolved, json_value_or_error.release_value() };
-    }
-
-    // 12. If promise is rejected with reason r, let result be JSON clone with session and r, and return error with error code javascript error and data result.
-    if (promise->state() == JS::Promise::State::Rejected) {
-        return { ExecuteScriptResultType::PromiseRejected, json_value_or_error.release_value() };
-    }
-
-    VERIFY_NOT_REACHED();
+    WebIDL::react_to_promise(promise_capability, reaction_steps, reaction_steps);
 }
 
 }

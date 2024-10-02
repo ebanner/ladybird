@@ -293,24 +293,19 @@ ErrorOr<void, Client::WrappedError> Client::send_success_response(JsonValue resu
     auto content = result.serialized<StringBuilder>();
 
     StringBuilder builder;
-    builder.append("HTTP/1.0 200 OK\r\n"sv);
+    builder.append("HTTP/1.1 200 OK\r\n"sv);
     builder.append("Server: WebDriver (SerenityOS)\r\n"sv);
     builder.append("X-Frame-Options: SAMEORIGIN\r\n"sv);
     builder.append("X-Content-Type-Options: nosniff\r\n"sv);
-    builder.append("Pragma: no-cache\r\n"sv);
     if (keep_alive)
         builder.append("Connection: keep-alive\r\n"sv);
+    builder.append("Cache-Control: no-cache\r\n"sv);
     builder.append("Content-Type: application/json; charset=utf-8\r\n"sv);
     builder.appendff("Content-Length: {}\r\n", content.length());
     builder.append("\r\n"sv);
+    builder.append(content);
 
-    auto builder_contents = TRY(builder.to_byte_buffer());
-    TRY(m_socket->write_until_depleted(builder_contents));
-
-    while (!content.is_empty()) {
-        auto bytes_sent = TRY(m_socket->write_some(content.bytes()));
-        content = content.substring_view(bytes_sent);
-    }
+    TRY(m_socket->write_until_depleted(builder.string_view()));
 
     if (!keep_alive)
         die();
@@ -335,17 +330,17 @@ ErrorOr<void, Client::WrappedError> Client::send_error_response(Error const& err
     JsonObject result;
     result.set("value", move(error_response));
 
-    StringBuilder content_builder;
-    result.serialize(content_builder);
+    auto content = result.serialized<StringBuilder>();
 
-    StringBuilder header_builder;
-    header_builder.appendff("HTTP/1.0 {} {}\r\n", error.http_status, reason);
-    header_builder.append("Content-Type: application/json; charset=UTF-8\r\n"sv);
-    header_builder.appendff("Content-Length: {}\r\n", content_builder.length());
-    header_builder.append("\r\n"sv);
+    StringBuilder builder;
+    builder.appendff("HTTP/1.1 {} {}\r\n", error.http_status, reason);
+    builder.append("Cache-Control: no-cache\r\n"sv);
+    builder.append("Content-Type: application/json; charset=utf-8\r\n"sv);
+    builder.appendff("Content-Length: {}\r\n", content.length());
+    builder.append("\r\n"sv);
+    builder.append(content);
 
-    TRY(m_socket->write_until_depleted(TRY(header_builder.to_byte_buffer())));
-    TRY(m_socket->write_until_depleted(TRY(content_builder.to_byte_buffer())));
+    TRY(m_socket->write_until_depleted(builder.string_view()));
 
     log_response(error.http_status);
     return {};

@@ -14,8 +14,8 @@ FAILURES=0
 set +e
 
 for cmd in \
-        Meta/check-ak-test-files.sh \
         Meta/check-debug-flags.sh \
+        Meta/check-idl-files.py \
         Meta/check-newlines-at-eof.py \
         Meta/check-png-sizes.sh \
         Meta/check-style.py \

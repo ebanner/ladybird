@@ -18,6 +18,7 @@
 #include <LibJS/Runtime/Array.h>
 #include <LibJS/Runtime/FunctionObject.h>
 #include <LibJS/Runtime/NativeFunction.h>
+#include <LibUnicode/Segmenter.h>
 #include <LibWeb/Animations/Animation.h>
 #include <LibWeb/Animations/AnimationPlaybackEvent.h>
 #include <LibWeb/Animations/AnimationTimeline.h>
@@ -141,8 +142,8 @@ JS_DEFINE_ALLOCATOR(Document);
 static JS::NonnullGCPtr<HTML::BrowsingContext> obtain_a_browsing_context_to_use_for_a_navigation_response(
     HTML::BrowsingContext& browsing_context,
     HTML::SandboxingFlagSet sandbox_flags,
-    HTML::CrossOriginOpenerPolicy navigation_coop,
-    HTML::CrossOriginOpenerPolicyEnforcementResult coop_enforcement_result)
+    HTML::OpenerPolicy navigation_coop,
+    HTML::OpenerPolicyEnforcementResult coop_enforcement_result)
 {
     // 1. If browsingContext is not a top-level browsing context, return browsingContext.
     if (!browsing_context.is_top_level())
@@ -167,7 +168,7 @@ static JS::NonnullGCPtr<HTML::BrowsingContext> obtain_a_browsing_context_to_use_
     // 5. If sandboxFlags is not empty, then:
     if (!is_empty(sandbox_flags)) {
         // 1. Assert navigationCOOP's value is "unsafe-none".
-        VERIFY(navigation_coop.value == HTML::CrossOriginOpenerPolicyValue::UnsafeNone);
+        VERIFY(navigation_coop.value == HTML::OpenerPolicyValue::UnsafeNone);
 
         // 2. Assert: newBrowsingContext's popup sandboxing flag set is empty.
 
@@ -185,11 +186,11 @@ WebIDL::ExceptionOr<JS::NonnullGCPtr<Document>> Document::create_and_initialize(
     auto browsing_context = navigation_params.navigable->active_browsing_context();
 
     // 2. Set browsingContext to the result of the obtaining a browsing context to use for a navigation response given browsingContext, navigationParams's final sandboxing flag set,
-    //    navigationParams's cross-origin opener policy, and navigationParams's COOP enforcement result.
+    //    navigationParams's opener policy, and navigationParams's COOP enforcement result.
     browsing_context = obtain_a_browsing_context_to_use_for_a_navigation_response(
         *browsing_context,
         navigation_params.final_sandboxing_flag_set,
-        navigation_params.cross_origin_opener_policy,
+        navigation_params.opener_policy,
         navigation_params.coop_enforcement_result);
 
     // FIXME: 3. Let permissionsPolicy be the result of creating a permissions policy from a response
@@ -287,7 +288,7 @@ WebIDL::ExceptionOr<JS::NonnullGCPtr<Document>> Document::create_and_initialize(
     //     policy container: navigationParams's policy container
     //     FIXME: permissions policy: permissionsPolicy
     //     active sandboxing flag set: navigationParams's final sandboxing flag set
-    //     FIXME: cross-origin opener policy: navigationParams's cross-origin opener policy
+    //     FIXME: opener policy: navigationParams's opener policy
     //     FIXME: load timing info: loadTimingInfo
     //     FIXME: was created via cross-origin redirects: navigationParams's response's has cross-origin redirects
     //     during-loading navigation ID for WebDriver BiDi: navigationParams's id
@@ -698,6 +699,22 @@ WebIDL::ExceptionOr<void> Document::close()
     return {};
 }
 
+// https://html.spec.whatwg.org/multipage/nav-history-apis.html#dom-document-defaultview
+JS::GCPtr<HTML::WindowProxy> Document::default_view()
+{
+    // If this's browsing context is null, then return null.
+    if (!browsing_context())
+        return {};
+
+    // 2. Return this's browsing context's WindowProxy object.
+    return browsing_context()->window_proxy();
+}
+
+JS::GCPtr<HTML::WindowProxy const> Document::default_view() const
+{
+    return const_cast<Document*>(this)->default_view();
+}
+
 HTML::Origin Document::origin() const
 {
     return m_origin;
@@ -1049,7 +1066,7 @@ void Document::set_needs_layout()
     schedule_layout_update();
 }
 
-void Document::invalidate_layout()
+void Document::invalidate_layout_tree()
 {
     tear_down_layout_tree();
     schedule_layout_update();
@@ -1131,10 +1148,34 @@ void Document::update_layout()
         }
     }
 
+    // Assign each box that establishes a formatting context a list of absolutely positioned children it should take care of during layout
+    m_layout_root->for_each_in_inclusive_subtree_of_type<Layout::Box>([&](auto& child) {
+        child.clear_contained_abspos_children();
+        return TraversalDecision::Continue;
+    });
+    m_layout_root->for_each_in_inclusive_subtree([&](auto& child) {
+        if (!child.is_absolutely_positioned())
+            return TraversalDecision::Continue;
+        if (auto* containing_block = child.containing_block()) {
+            auto* closest_box_that_establishes_formatting_context = containing_block;
+            while (closest_box_that_establishes_formatting_context) {
+                if (closest_box_that_establishes_formatting_context == m_layout_root)
+                    break;
+                if (Layout::FormattingContext::formatting_context_type_created_by_box(*closest_box_that_establishes_formatting_context).has_value()) {
+                    break;
+                }
+                closest_box_that_establishes_formatting_context = closest_box_that_establishes_formatting_context->containing_block();
+            }
+            VERIFY(closest_box_that_establishes_formatting_context);
+            closest_box_that_establishes_formatting_context->add_contained_abspos_child(child);
+        }
+        return TraversalDecision::Continue;
+    });
+
     Layout::LayoutState layout_state;
 
     {
-        Layout::BlockFormattingContext root_formatting_context(layout_state, *m_layout_root, nullptr);
+        Layout::BlockFormattingContext root_formatting_context(layout_state, Layout::LayoutMode::Normal, *m_layout_root, nullptr);
 
         auto& viewport = static_cast<Layout::Viewport&>(*m_layout_root);
         auto& viewport_state = layout_state.get_mutable(viewport);
@@ -1147,8 +1188,6 @@ void Document::update_layout()
         }
 
         root_formatting_context.run(
-            *m_layout_root,
-            Layout::LayoutMode::Normal,
             Layout::AvailableSpace(
                 Layout::AvailableSize::make_definite(viewport_rect.width()),
                 Layout::AvailableSize::make_definite(viewport_rect.height())));
@@ -1172,7 +1211,7 @@ void Document::update_layout()
         page().client().page_did_layout();
     }
 
-    paintable()->recompute_selection_states();
+    paintable()->update_selection();
 
     m_needs_layout = false;
 
@@ -1260,7 +1299,7 @@ void Document::update_style()
         invalidate_display_list();
     }
     if (invalidation.rebuild_layout_tree) {
-        invalidate_layout();
+        invalidate_layout_tree();
     } else {
         if (invalidation.relayout)
             set_needs_layout();
@@ -2424,7 +2463,7 @@ String Document::cookie(Cookie::Source source)
 
 void Document::set_cookie(StringView cookie_string, Cookie::Source source)
 {
-    auto cookie = Cookie::parse_cookie(cookie_string);
+    auto cookie = Cookie::parse_cookie(url(), cookie_string);
     if (!cookie.has_value())
         return;
 
@@ -2717,7 +2756,7 @@ void Document::evaluate_media_rules()
     if (any_media_queries_changed_match_state) {
         style_computer().invalidate_rule_cache();
         invalidate_style(StyleInvalidationReason::MediaQueryChangedMatchState);
-        invalidate_layout();
+        invalidate_layout_tree();
     }
 }
 
@@ -4920,38 +4959,44 @@ JS::Value Document::named_item_value(FlyString const& name) const
 }
 
 // https://w3c.github.io/editing/docs/execCommand/#execcommand()
-bool Document::exec_command(String, bool, String)
+bool Document::exec_command(String const& command, bool show_ui, String const& value)
 {
+    dbgln("FIXME: document.execCommand(\"{}\", {}, \"{}\")", command, show_ui, value);
     return false;
 }
 
 // https://w3c.github.io/editing/docs/execCommand/#querycommandenabled()
-bool Document::query_command_enabled(String)
+bool Document::query_command_enabled(String const& command)
 {
+    dbgln("FIXME: document.queryCommandEnabled(\"{}\")", command);
     return false;
 }
 
 // https://w3c.github.io/editing/docs/execCommand/#querycommandindeterm()
-bool Document::query_command_indeterm(String)
+bool Document::query_command_indeterm(String const& command)
 {
+    dbgln("FIXME: document.queryCommandIndeterm(\"{}\")", command);
     return false;
 }
 
 // https://w3c.github.io/editing/docs/execCommand/#querycommandstate()
-bool Document::query_command_state(String)
+bool Document::query_command_state(String const& command)
 {
+    dbgln("FIXME: document.queryCommandState(\"{}\")", command);
     return false;
 }
 
 // https://w3c.github.io/editing/docs/execCommand/#querycommandsupported()
-bool Document::query_command_supported(String)
+bool Document::query_command_supported(String const& command)
 {
+    dbgln("FIXME: document.queryCommandSupported(\"{}\")", command);
     return false;
 }
 
 // https://w3c.github.io/editing/docs/execCommand/#querycommandvalue()
-String Document::query_command_value(String)
+String Document::query_command_value(String const& command)
 {
+    dbgln("FIXME: document.queryCommandValue(\"{}\")", command);
     return String {};
 }
 
@@ -5552,10 +5597,10 @@ RefPtr<Painting::DisplayList> Document::record_display_list(PaintConfig config)
     Vector<RefPtr<Painting::ScrollFrame>> scroll_state;
     scroll_state.resize(viewport_paintable.scroll_state.size() + viewport_paintable.sticky_state.size());
     for (auto& [_, scrollable_frame] : viewport_paintable.scroll_state) {
-        scroll_state[scrollable_frame->id] = scrollable_frame;
+        scroll_state[scrollable_frame->id()] = scrollable_frame;
     }
     for (auto& [_, scrollable_frame] : viewport_paintable.sticky_state) {
-        scroll_state[scrollable_frame->id] = scrollable_frame;
+        scroll_state[scrollable_frame->id()] = scrollable_frame;
     }
 
     display_list->set_scroll_state(move(scroll_state));
@@ -5566,6 +5611,20 @@ RefPtr<Painting::DisplayList> Document::record_display_list(PaintConfig config)
     m_cached_display_list_paint_config = config;
 
     return display_list;
+}
+
+Unicode::Segmenter& Document::grapheme_segmenter() const
+{
+    if (!m_grapheme_segmenter)
+        m_grapheme_segmenter = Unicode::Segmenter::create(Unicode::SegmenterGranularity::Grapheme);
+    return *m_grapheme_segmenter;
+}
+
+Unicode::Segmenter& Document::word_segmenter() const
+{
+    if (!m_word_segmenter)
+        m_word_segmenter = Unicode::Segmenter::create(Unicode::SegmenterGranularity::Word);
+    return *m_word_segmenter;
 }
 
 }

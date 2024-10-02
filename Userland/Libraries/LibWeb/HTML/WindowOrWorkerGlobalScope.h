@@ -77,6 +77,9 @@ public:
     JS::NonnullGCPtr<IndexedDB::IDBFactory> indexed_db();
 
     void report_error(JS::Value e);
+    void report_an_exception(JS::Value const& e);
+
+    [[nodiscard]] JS::NonnullGCPtr<Crypto::Crypto> crypto();
 
 protected:
     void initialize(JS::Realm&);
@@ -116,6 +119,8 @@ private:
     JS::GCPtr<IndexedDB::IDBFactory> m_indexed_db;
 
     mutable JS::GCPtr<JS::Object> m_supported_entry_types_array;
+
+    JS::GCPtr<Crypto::Crypto> m_crypto;
 
     bool m_error_reporting_mode { false };
 };

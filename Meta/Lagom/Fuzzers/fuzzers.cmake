@@ -10,7 +10,6 @@ set(FUZZER_TARGETS
     GIFLoader
     GzipDecompression
     GzipRoundtrip
-    HttpRequest
     ICCProfile
     ICOLoader
     JPEGLoader
@@ -60,11 +59,10 @@ set(FUZZER_DEPENDENCIES_CSSParser LibWeb)
 set(FUZZER_DEPENDENCIES_DeflateCompression LibCompress)
 set(FUZZER_DEPENDENCIES_DeflateDecompression LibCompress)
 set(FUZZER_DEPENDENCIES_ELF LibELF)
-set(FUZZER_DEPENDENCIES_FlacLoader LibAudio)
+set(FUZZER_DEPENDENCIES_FlacLoader LibMedia)
 set(FUZZER_DEPENDENCIES_GIFLoader LibGfx)
 set(FUZZER_DEPENDENCIES_GzipDecompression LibCompress)
 set(FUZZER_DEPENDENCIES_GzipRoundtrip LibCompress)
-set(FUZZER_DEPENDENCIES_HttpRequest LibHTTP)
 set(FUZZER_DEPENDENCIES_ICCProfile LibGfx)
 set(FUZZER_DEPENDENCIES_ICOLoader LibGfx)
 set(FUZZER_DEPENDENCIES_JPEGLoader LibGfx)
@@ -73,11 +71,11 @@ set(FUZZER_DEPENDENCIES_LzmaDecompression LibArchive LibCompress)
 set(FUZZER_DEPENDENCIES_LzmaRoundtrip LibCompress)
 set(FUZZER_DEPENDENCIES_MatroskaReader LibMedia)
 set(FUZZER_DEPENDENCIES_MD5 LibCrypto)
-set(FUZZER_DEPENDENCIES_MP3Loader LibAudio)
+set(FUZZER_DEPENDENCIES_MP3Loader LibMedia)
 set(FUZZER_DEPENDENCIES_PEM LibCrypto)
 set(FUZZER_DEPENDENCIES_PNGLoader LibGfx)
 set(FUZZER_DEPENDENCIES_Poly1305 LibCrypto)
-set(FUZZER_DEPENDENCIES_QOALoader LibAudio)
+set(FUZZER_DEPENDENCIES_QOALoader LibMedia)
 set(FUZZER_DEPENDENCIES_RegexECMA262 LibRegex)
 set(FUZZER_DEPENDENCIES_RegexPosixBasic LibRegex)
 set(FUZZER_DEPENDENCIES_RegexPosixExtended LibRegex)
@@ -93,7 +91,7 @@ set(FUZZER_DEPENDENCIES_TTF LibGfx)
 set(FUZZER_DEPENDENCIES_TinyVGLoader LibGfx)
 set(FUZZER_DEPENDENCIES_URL LibURL)
 set(FUZZER_DEPENDENCIES_WasmParser LibWasm)
-set(FUZZER_DEPENDENCIES_WAVLoader LibAudio)
+set(FUZZER_DEPENDENCIES_WAVLoader LibMedia)
 set(FUZZER_DEPENDENCIES_WebPLoader LibGfx)
 set(FUZZER_DEPENDENCIES_WOFF LibGfx)
 set(FUZZER_DEPENDENCIES_WOFF2 LibGfx)

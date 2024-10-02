@@ -19,13 +19,14 @@
 #include <LibJS/Console.h>
 #include <LibJS/Forward.h>
 #include <LibURL/URL.h>
+#include <LibUnicode/Forward.h>
 #include <LibWeb/CSS/CSSStyleSheet.h>
 #include <LibWeb/CSS/StyleSheetList.h>
 #include <LibWeb/Cookie/Cookie.h>
 #include <LibWeb/DOM/NonElementParentNode.h>
 #include <LibWeb/DOM/ParentNode.h>
 #include <LibWeb/HTML/BrowsingContext.h>
-#include <LibWeb/HTML/CrossOrigin/CrossOriginOpenerPolicy.h>
+#include <LibWeb/HTML/CrossOrigin/OpenerPolicy.h>
 #include <LibWeb/HTML/DocumentReadyState.h>
 #include <LibWeb/HTML/HTMLScriptElement.h>
 #include <LibWeb/HTML/History.h>
@@ -150,8 +151,8 @@ public:
     HTML::Origin origin() const;
     void set_origin(HTML::Origin const& origin);
 
-    HTML::CrossOriginOpenerPolicy const& cross_origin_opener_policy() const { return m_cross_origin_opener_policy; }
-    void set_cross_origin_opener_policy(HTML::CrossOriginOpenerPolicy policy) { m_cross_origin_opener_policy = move(policy); }
+    HTML::OpenerPolicy const& opener_policy() const { return m_opener_policy; }
+    void set_opener_policy(HTML::OpenerPolicy policy) { m_opener_policy = move(policy); }
 
     URL::URL parse_url(StringView) const;
 
@@ -243,7 +244,7 @@ public:
 
     void set_needs_layout();
 
-    void invalidate_layout();
+    void invalidate_layout_tree();
     void invalidate_stacking_context_tree();
 
     virtual bool is_child_allowed(Node const&) const override;
@@ -370,8 +371,8 @@ public:
     WebIDL::ExceptionOr<JS::GCPtr<HTML::WindowProxy>> open(StringView url, StringView name, StringView features);
     WebIDL::ExceptionOr<void> close();
 
-    HTML::Window* default_view() { return m_window.ptr(); }
-    HTML::Window const* default_view() const { return m_window.ptr(); }
+    JS::GCPtr<HTML::WindowProxy const> default_view() const;
+    JS::GCPtr<HTML::WindowProxy> default_view();
 
     String const& content_type() const { return m_content_type; }
     void set_content_type(String content_type) { m_content_type = move(content_type); }
@@ -560,12 +561,12 @@ public:
     void set_previous_document_unload_timing(DocumentUnloadTimingInfo const& previous_document_unload_timing) { m_previous_document_unload_timing = previous_document_unload_timing; }
 
     // https://w3c.github.io/editing/docs/execCommand/
-    bool exec_command(String command_id, bool show_ui, String value);
-    bool query_command_enabled(String command_id);
-    bool query_command_indeterm(String command_id);
-    bool query_command_state(String command_id);
-    bool query_command_supported(String command_id);
-    String query_command_value(String command_id);
+    bool exec_command(String const& command, bool show_ui, String const& value);
+    bool query_command_enabled(String const& command);
+    bool query_command_indeterm(String const& command);
+    bool query_command_state(String const& command);
+    bool query_command_supported(String const& command);
+    String query_command_value(String const& command);
 
     bool is_allowed_to_use_feature(PolicyControlledFeature) const;
 
@@ -576,6 +577,8 @@ public:
     void make_active();
 
     void set_salvageable(bool value) { m_salvageable = value; }
+
+    void make_unsalvageable(String reason);
 
     HTML::ListOfAvailableImages& list_of_available_images();
     HTML::ListOfAvailableImages const& list_of_available_images() const;
@@ -720,6 +723,9 @@ public:
 
     void invalidate_display_list();
 
+    Unicode::Segmenter& grapheme_segmenter() const;
+    Unicode::Segmenter& word_segmenter() const;
+
 protected:
     virtual void initialize(JS::Realm&) override;
     virtual void visit_edges(Cell::Visitor&) override;
@@ -748,8 +754,6 @@ private:
     void dispatch_events_for_animation_if_necessary(JS::NonnullGCPtr<Animations::Animation>);
 
     void reset_cursor_blink_cycle();
-
-    void make_unsalvageable(String reason);
 
     JS::NonnullGCPtr<Page> m_page;
     OwnPtr<CSS::StyleComputer> m_style_computer;
@@ -862,7 +866,7 @@ private:
     Optional<URL::URL> m_about_base_url;
 
     // https://html.spec.whatwg.org/multipage/dom.html#concept-document-coop
-    HTML::CrossOriginOpenerPolicy m_cross_origin_opener_policy;
+    HTML::OpenerPolicy m_opener_policy;
 
     // https://html.spec.whatwg.org/multipage/dom.html#the-document's-referrer
     String m_referrer;
@@ -998,6 +1002,9 @@ private:
 
     Optional<PaintConfig> m_cached_display_list_paint_config;
     RefPtr<Painting::DisplayList> m_cached_display_list;
+
+    mutable OwnPtr<Unicode::Segmenter> m_grapheme_segmenter;
+    mutable OwnPtr<Unicode::Segmenter> m_word_segmenter;
 };
 
 template<>

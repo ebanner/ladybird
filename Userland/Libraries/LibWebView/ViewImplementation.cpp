@@ -107,7 +107,7 @@ void ViewImplementation::zoom_in()
 {
     if (m_zoom_level >= ZOOM_MAX_LEVEL)
         return;
-    m_zoom_level += ZOOM_STEP;
+    m_zoom_level = round_to<int>((m_zoom_level + ZOOM_STEP) * 100) / 100.0f;
     update_zoom();
 }
 
@@ -115,7 +115,7 @@ void ViewImplementation::zoom_out()
 {
     if (m_zoom_level <= ZOOM_MIN_LEVEL)
         return;
-    m_zoom_level -= ZOOM_STEP;
+    m_zoom_level = round_to<int>((m_zoom_level - ZOOM_STEP) * 100) / 100.0f;
     update_zoom();
 }
 
@@ -147,11 +147,11 @@ void ViewImplementation::enqueue_input_event(Web::InputEvent event)
         });
 }
 
-void ViewImplementation::did_finish_handling_input_event(Badge<WebContentClient>, bool event_was_accepted)
+void ViewImplementation::did_finish_handling_input_event(Badge<WebContentClient>, Web::EventResult event_result)
 {
     auto event = m_pending_input_events.dequeue();
 
-    if (event_was_accepted)
+    if (event_result == Web::EventResult::Handled)
         return;
 
     // Here we handle events that were not consumed or cancelled by the WebContent. Propagate the event back
@@ -191,6 +191,15 @@ void ViewImplementation::set_preferred_languages(Vector<String> preferred_langua
 void ViewImplementation::set_enable_do_not_track(bool enable)
 {
     client().async_set_enable_do_not_track(page_id(), enable);
+}
+
+void ViewImplementation::set_enable_autoplay(bool enable)
+{
+    if (enable) {
+        client().async_set_autoplay_allowed_on_all_websites(page_id());
+    } else {
+        client().async_set_autoplay_allowlist(page_id(), {});
+    }
 }
 
 ByteString ViewImplementation::selected_text()
@@ -509,7 +518,7 @@ void ViewImplementation::handle_web_content_process_crash()
 static ErrorOr<LexicalPath> save_screenshot(Gfx::ShareableBitmap const& bitmap)
 {
     if (!bitmap.is_valid())
-        return Error::from_string_view("Failed to take a screenshot"sv);
+        return Error::from_string_literal("Failed to take a screenshot");
 
     auto file = Core::DateTime::now().to_byte_string("screenshot-%Y-%m-%d-%H-%M-%S.png"sv);
     auto path = TRY(Application::the().path_for_downloaded_file(file));
@@ -583,15 +592,40 @@ void ViewImplementation::did_receive_screenshot(Badge<WebContentClient>, Gfx::Sh
     m_pending_screenshot = nullptr;
 }
 
+NonnullRefPtr<Core::Promise<String>> ViewImplementation::request_internal_page_info(PageInfoType type)
+{
+    auto promise = Core::Promise<String>::construct();
+
+    if (m_pending_info_request) {
+        // For simplicitly, only allow one info request at a time for now.
+        promise->reject(Error::from_string_literal("A page info request is already in progress"));
+        return promise;
+    }
+
+    m_pending_info_request = promise;
+    client().async_request_internal_page_info(page_id(), type);
+
+    return promise;
+}
+
+void ViewImplementation::did_receive_internal_page_info(Badge<WebContentClient>, PageInfoType, String const& info)
+{
+    VERIFY(m_pending_info_request);
+
+    m_pending_info_request->resolve(String { info });
+    m_pending_info_request = nullptr;
+}
+
 ErrorOr<LexicalPath> ViewImplementation::dump_gc_graph()
 {
-    auto gc_graph_json = client().dump_gc_graph(page_id());
+    auto promise = request_internal_page_info(PageInfoType::GCGraph);
+    auto gc_graph_json = TRY(promise->await());
 
     LexicalPath path { Core::StandardPaths::tempfile_directory() };
     path = path.append(TRY(Core::DateTime::now().to_string("gc-graph-%Y-%m-%d-%H-%M-%S.json"sv)));
 
-    auto screenshot_file = TRY(Core::File::open(path.string(), Core::File::OpenMode::Write));
-    TRY(screenshot_file->write_until_depleted(gc_graph_json.bytes()));
+    auto dump_file = TRY(Core::File::open(path.string(), Core::File::OpenMode::Write));
+    TRY(dump_file->write_until_depleted(gc_graph_json.bytes()));
 
     return path;
 }

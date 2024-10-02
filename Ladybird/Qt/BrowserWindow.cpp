@@ -103,6 +103,12 @@ BrowserWindow::BrowserWindow(Vector<URL::URL> const& initial_urls, IsPopupWindow
         });
     });
 
+    QObject::connect(Settings::the(), &Settings::enable_autoplay_changed, this, [this](bool enable) {
+        for_each_tab([enable](auto& tab) {
+            tab.set_enable_autoplay(enable);
+        });
+    });
+
     QObject::connect(Settings::the(), &Settings::preferred_languages_changed, this, [this](QStringList languages) {
         Vector<String> preferred_languages;
         preferred_languages.ensure_capacity(languages.length());
@@ -430,11 +436,6 @@ BrowserWindow::BrowserWindow(Vector<URL::URL> const& initial_urls, IsPopupWindow
     QObject::connect(dump_local_storage_action, &QAction::triggered, this, [this] {
         debug_request("dump-local-storage");
     });
-
-    auto* dump_connection_info = new QAction("Dump Co&nnection Info", this);
-    dump_connection_info->setIcon(load_icon_from_uri("resource://icons/16x16/network.png"sv));
-    debug_menu->addAction(dump_connection_info);
-    QObject::connect(dump_connection_info, &QAction::triggered, this, &BrowserWindow::dump_connection_info);
 
     debug_menu->addSeparator();
 
@@ -806,26 +807,6 @@ void BrowserWindow::initialize_tab(Tab* tab)
         (void)modifiers;
     };
 
-    tab->view().on_get_all_cookies = [](auto const& url) {
-        return WebView::Application::cookie_jar().get_all_cookies(url);
-    };
-
-    tab->view().on_get_named_cookie = [](auto const& url, auto const& name) {
-        return WebView::Application::cookie_jar().get_named_cookie(url, name);
-    };
-
-    tab->view().on_get_cookie = [](auto& url, auto source) {
-        return WebView::Application::cookie_jar().get_cookie(url, source);
-    };
-
-    tab->view().on_set_cookie = [](auto& url, auto& cookie, auto source) {
-        WebView::Application::cookie_jar().set_cookie(url, cookie, source);
-    };
-
-    tab->view().on_update_cookie = [](auto const& cookie) {
-        WebView::Application::cookie_jar().update_cookie(cookie);
-    };
-
     m_tabs_container->setTabIcon(m_tabs_container->indexOf(tab), tab->favicon());
     create_close_button_for_tab(tab);
 
@@ -843,6 +824,7 @@ void BrowserWindow::initialize_tab(Tab* tab)
     tab->set_preferred_languages(preferred_languages);
     tab->set_navigator_compatibility_mode(navigator_compatibility_mode());
     tab->set_enable_do_not_track(Settings::the()->enable_do_not_track());
+    tab->set_enable_autoplay(WebView::Application::web_content_options().enable_autoplay == WebView::EnableAutoplay::Yes || Settings::the()->enable_autoplay());
     tab->view().set_preferred_color_scheme(m_preferred_color_scheme);
 }
 
@@ -1237,12 +1219,6 @@ void BrowserWindow::closeEvent(QCloseEvent* event)
     QObject::deleteLater();
 
     QMainWindow::closeEvent(event);
-}
-
-void BrowserWindow::dump_connection_info()
-{
-    if (auto& application = static_cast<Application&>(WebView::Application::the()); application.request_server_client)
-        application.request_server_client->dump_connection_info();
 }
 
 }

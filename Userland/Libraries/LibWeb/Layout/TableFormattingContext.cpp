@@ -14,8 +14,8 @@
 
 namespace Web::Layout {
 
-TableFormattingContext::TableFormattingContext(LayoutState& state, Box const& root, FormattingContext* parent)
-    : FormattingContext(Type::Table, state, root, parent)
+TableFormattingContext::TableFormattingContext(LayoutState& state, LayoutMode layout_mode, Box const& root, FormattingContext* parent)
+    : FormattingContext(Type::Table, layout_mode, state, root, parent)
 {
 }
 
@@ -31,7 +31,7 @@ static inline bool is_table_column(Box const& box)
     return box.display().is_table_column();
 }
 
-CSSPixels TableFormattingContext::run_caption_layout(LayoutMode layout_mode, CSS::CaptionSide phase)
+CSSPixels TableFormattingContext::run_caption_layout(CSS::CaptionSide phase)
 {
     CSSPixels caption_height = 0;
     for (auto* child = table_box().first_child(); child; child = child->next_sibling()) {
@@ -40,8 +40,8 @@ CSSPixels TableFormattingContext::run_caption_layout(LayoutMode layout_mode, CSS
         }
         // The caption boxes are principal block-level boxes that retain their own content, padding, margin, and border areas,
         // and are rendered as normal block boxes inside the table wrapper box, as described in https://www.w3.org/TR/CSS22/tables.html#model
-        auto caption_context = make<BlockFormattingContext>(m_state, *verify_cast<BlockContainer>(child), this);
-        caption_context->run(table_box(), layout_mode, *m_available_space);
+        auto caption_context = make<BlockFormattingContext>(m_state, m_layout_mode, *verify_cast<BlockContainer>(child), this);
+        caption_context->run(*m_available_space);
         VERIFY(child->is_box());
         auto const& child_box = static_cast<Box const&>(*child);
         // FIXME: Since caption only has inline children, BlockFormattingContext doesn't resolve the vertical metrics.
@@ -828,7 +828,7 @@ void TableFormattingContext::distribute_excess_width_to_columns_fixed_mode(CSSPi
     distribute_excess_width_equally(excess_width, [](auto const& column) { return column.used_width == 0; });
 }
 
-void TableFormattingContext::compute_table_height(LayoutMode layout_mode)
+void TableFormattingContext::compute_table_height()
 {
     // First pass of row height calculation:
     for (auto& row : m_rows) {
@@ -849,8 +849,8 @@ void TableFormattingContext::compute_table_height(LayoutMode layout_mode)
         for (size_t i = 0; i < cell.column_span; ++i)
             span_width += m_columns[cell.column_index + i].used_width;
 
-        auto width_of_containing_block = m_state.get(*cell.box->containing_block()).content_width();
-        auto height_of_containing_block = m_state.get(*cell.box->containing_block()).content_height();
+        auto width_of_containing_block = cell_state.containing_block_used_values()->content_width();
+        auto height_of_containing_block = cell_state.containing_block_used_values()->content_height();
 
         cell_state.padding_top = cell.box->computed_values().padding().top().to_px(cell.box, width_of_containing_block);
         cell_state.padding_bottom = cell.box->computed_values().padding().bottom().to_px(cell.box, width_of_containing_block);
@@ -878,7 +878,7 @@ void TableFormattingContext::compute_table_height(LayoutMode layout_mode)
         // - the horizontal/vertical border-spacing times the amount of spanned visible columns/rows minus one
         // FIXME: Account for visibility.
         cell_state.set_content_width(span_width - cell_state.border_box_left() - cell_state.border_box_right() + (cell.column_span - 1) * border_spacing_horizontal());
-        if (auto independent_formatting_context = layout_inside(cell.box, layout_mode, cell_state.available_inner_space_or_constraints_from(*m_available_space))) {
+        if (auto independent_formatting_context = layout_inside(cell.box, m_layout_mode, cell_state.available_inner_space_or_constraints_from(*m_available_space))) {
             cell_state.set_content_height(independent_formatting_context->automatic_content_height());
             independent_formatting_context->parent_context_did_dimension_child_root_box();
         }
@@ -961,7 +961,7 @@ void TableFormattingContext::compute_table_height(LayoutMode layout_mode)
         }
 
         cell_state.set_content_width(span_width - cell_state.border_box_left() - cell_state.border_box_right() + (cell.column_span - 1) * border_spacing_horizontal());
-        if (auto independent_formatting_context = layout_inside(cell.box, layout_mode, cell_state.available_inner_space_or_constraints_from(*m_available_space))) {
+        if (auto independent_formatting_context = layout_inside(cell.box, m_layout_mode, cell_state.available_inner_space_or_constraints_from(*m_available_space))) {
             independent_formatting_context->parent_context_did_dimension_child_root_box();
         }
 
@@ -1581,12 +1581,12 @@ void TableFormattingContext::finish_grid_initialization(TableGrid const& table_g
     }
 }
 
-void TableFormattingContext::run_until_width_calculation(Box const& box, AvailableSpace const& available_space)
+void TableFormattingContext::run_until_width_calculation(AvailableSpace const& available_space)
 {
     m_available_space = available_space;
 
     // Determine the number of rows/columns the table requires.
-    finish_grid_initialization(TableGrid::calculate_row_column_grid(box, m_cells, m_rows));
+    finish_grid_initialization(TableGrid::calculate_row_column_grid(context_box(), m_cells, m_rows));
 
     border_conflict_resolution();
 
@@ -1607,13 +1607,42 @@ void TableFormattingContext::run_until_width_calculation(Box const& box, Availab
     compute_table_width();
 }
 
-void TableFormattingContext::run(Box const& box, LayoutMode layout_mode, AvailableSpace const& available_space)
+void TableFormattingContext::parent_context_did_dimension_child_root_box()
+{
+    if (m_layout_mode != LayoutMode::Normal)
+        return;
+
+    context_box().for_each_in_subtree_of_type<Box const>([&](Layout::Box const& box) {
+        if (box.is_absolutely_positioned()) {
+            // FIXME: calculate_static_position_rect() is not aware of how to correctly calculate static position for
+            //        a box nested inside a table, but we need to set some value, so layout_absolutely_positioned_element()
+            //        won't crash trying to access it.
+            m_state.get_mutable(box).set_static_position_rect(calculate_static_position_rect(box));
+        }
+
+        if (formatting_context_type_created_by_box(box).has_value()) {
+            return TraversalDecision::SkipChildrenAndContinue;
+        }
+
+        return TraversalDecision::Continue;
+    });
+
+    for (auto& child : context_box().contained_abspos_children()) {
+        auto& box = verify_cast<Box>(*child);
+        auto& cb_state = m_state.get(*box.containing_block());
+        auto available_width = AvailableSize::make_definite(cb_state.content_width() + cb_state.padding_left + cb_state.padding_right);
+        auto available_height = AvailableSize::make_definite(cb_state.content_height() + cb_state.padding_top + cb_state.padding_bottom);
+        layout_absolutely_positioned_element(box, AvailableSpace(available_width, available_height));
+    }
+}
+
+void TableFormattingContext::run(AvailableSpace const& available_space)
 {
     m_available_space = available_space;
 
-    auto total_captions_height = run_caption_layout(layout_mode, CSS::CaptionSide::Top);
+    auto total_captions_height = run_caption_layout(CSS::CaptionSide::Top);
 
-    run_until_width_calculation(box, available_space);
+    run_until_width_calculation(available_space);
 
     if (available_space.width.is_intrinsic_sizing_constraint() && !available_space.height.is_intrinsic_sizing_constraint()) {
         return;
@@ -1622,7 +1651,7 @@ void TableFormattingContext::run(Box const& box, LayoutMode layout_mode, Availab
     // Distribute the width of the table among columns.
     distribute_width_to_columns();
 
-    compute_table_height(layout_mode);
+    compute_table_height();
 
     distribute_height_to_rows();
 
@@ -1631,7 +1660,7 @@ void TableFormattingContext::run(Box const& box, LayoutMode layout_mode, Availab
 
     m_state.get_mutable(table_box()).set_content_height(m_table_height);
 
-    total_captions_height += run_caption_layout(layout_mode, CSS::CaptionSide::Bottom);
+    total_captions_height += run_caption_layout(CSS::CaptionSide::Bottom);
 
     // Table captions are positioned between the table margins and its borders (outside the grid box borders) as described in
     // https://www.w3.org/TR/css-tables-3/#bounding-box-assignment

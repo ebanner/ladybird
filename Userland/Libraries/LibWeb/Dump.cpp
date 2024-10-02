@@ -662,6 +662,11 @@ void dump_font_face_rule(StringBuilder& builder, CSS::CSSFontFaceRule const& rul
         builder.appendff("slope: {}\n", font_face.slope().value());
     }
 
+    if (font_face.width().has_value()) {
+        indent(builder, indent_levels + 1);
+        builder.appendff("width: {}\n", font_face.width().value());
+    }
+
     indent(builder, indent_levels + 1);
     builder.append("sources:\n"sv);
     for (auto const& source : font_face.sources()) {
@@ -677,6 +682,32 @@ void dump_font_face_rule(StringBuilder& builder, CSS::CSSFontFaceRule const& rul
     for (auto const& unicode_range : font_face.unicode_ranges()) {
         indent(builder, indent_levels + 2);
         builder.appendff("{}\n", unicode_range.to_string());
+    }
+
+    if (font_face.ascent_override().has_value()) {
+        indent(builder, indent_levels + 1);
+        builder.appendff("ascent-override: {}\n", font_face.ascent_override().value());
+    }
+    if (font_face.descent_override().has_value()) {
+        indent(builder, indent_levels + 1);
+        builder.appendff("descent-override: {}\n", font_face.descent_override().value());
+    }
+    if (font_face.line_gap_override().has_value()) {
+        indent(builder, indent_levels + 1);
+        builder.appendff("line-gap-override: {}\n", font_face.line_gap_override().value());
+    }
+
+    indent(builder, indent_levels + 1);
+    builder.appendff("display: {}\n", CSS::to_string(font_face.font_display()));
+
+    if (font_face.font_named_instance().has_value()) {
+        indent(builder, indent_levels + 1);
+        builder.appendff("named-instance: {}\n", font_face.font_named_instance().value());
+    }
+
+    if (font_face.font_language_override().has_value()) {
+        indent(builder, indent_levels + 1);
+        builder.appendff("language-override: {}\n", font_face.font_language_override().value());
     }
 }
 

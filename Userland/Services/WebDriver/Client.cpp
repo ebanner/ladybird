@@ -23,7 +23,7 @@ HashMap<unsigned, NonnullRefPtr<Session>> Client::s_sessions;
 ErrorOr<NonnullRefPtr<Client>> Client::try_create(NonnullOwnPtr<Core::BufferedTCPSocket> socket, LaunchBrowserCallbacks callbacks, Core::EventReceiver* parent)
 {
     if (!callbacks.launch_browser || !callbacks.launch_headless_browser)
-        return Error::from_string_view("All callbacks to launch a browser must be provided"sv);
+        return Error::from_string_literal("All callbacks to launch a browser must be provided");
 
     TRY(socket->set_blocking(true));
     return adopt_nonnull_ref_or_enomem(new (nothrow) Client(move(socket), move(callbacks), parent));
@@ -37,14 +37,18 @@ Client::Client(NonnullOwnPtr<Core::BufferedTCPSocket> socket, LaunchBrowserCallb
 
 Client::~Client() = default;
 
-ErrorOr<NonnullRefPtr<Session>, Web::WebDriver::Error> Client::find_session_with_id(StringView session_id)
+ErrorOr<NonnullRefPtr<Session>, Web::WebDriver::Error> Client::find_session_with_id(StringView session_id, AllowInvalidWindowHandle allow_invalid_window_handle)
 {
     auto session_id_or_error = session_id.to_number<unsigned>();
     if (!session_id_or_error.has_value())
         return Web::WebDriver::Error::from_code(Web::WebDriver::ErrorCode::InvalidSessionId, "Invalid session id");
 
-    if (auto session = s_sessions.get(*session_id_or_error); session.has_value())
+    if (auto session = s_sessions.get(*session_id_or_error); session.has_value()) {
+        if (allow_invalid_window_handle == AllowInvalidWindowHandle::No)
+            TRY(session.value()->ensure_current_window_handle_is_valid());
+
         return *session.release_value();
+    }
 
     return Web::WebDriver::Error::from_code(Web::WebDriver::ErrorCode::InvalidSessionId, "Invalid session id");
 }
@@ -311,7 +315,7 @@ Web::WebDriver::Response Client::close_window(Web::WebDriver::Parameters paramet
 Web::WebDriver::Response Client::switch_to_window(Web::WebDriver::Parameters parameters, AK::JsonValue payload)
 {
     dbgln_if(WEBDRIVER_DEBUG, "Handling POST /session/<session_id>/window");
-    auto session = TRY(find_session_with_id(parameters[0]));
+    auto session = TRY(find_session_with_id(parameters[0], AllowInvalidWindowHandle::Yes));
 
     if (!payload.is_object())
         return Web::WebDriver::Error::from_code(Web::WebDriver::ErrorCode::InvalidArgument, "Payload is not a JSON object");
@@ -331,7 +335,7 @@ Web::WebDriver::Response Client::switch_to_window(Web::WebDriver::Parameters par
 Web::WebDriver::Response Client::get_window_handles(Web::WebDriver::Parameters parameters, JsonValue)
 {
     dbgln_if(WEBDRIVER_DEBUG, "Handling GET /session/<session_id>/window/handles");
-    auto session = TRY(find_session_with_id(parameters[0]));
+    auto session = TRY(find_session_with_id(parameters[0], AllowInvalidWindowHandle::Yes));
     return session->get_window_handles();
 }
 
@@ -598,11 +602,11 @@ Web::WebDriver::Response Client::element_clear(Web::WebDriver::Parameters parame
 
 // 12.5.3 Element Send Keys, https://w3c.github.io/webdriver/#dfn-element-send-keys
 // POST /session/{session id}/element/{element id}/value
-Web::WebDriver::Response Client::element_send_keys(Web::WebDriver::Parameters parameters, JsonValue)
+Web::WebDriver::Response Client::element_send_keys(Web::WebDriver::Parameters parameters, JsonValue payload)
 {
     dbgln_if(WEBDRIVER_DEBUG, "Handling POST /session/<session_id>/element/<element_id>/value");
     auto session = TRY(find_session_with_id(parameters[0]));
-    return session->web_content_connection().element_send_keys(move(parameters[1]));
+    return session->web_content_connection().element_send_keys(move(parameters[1]), move(payload));
 }
 
 // 13.1 Get Page Source, https://w3c.github.io/webdriver/#dfn-get-page-source
@@ -620,7 +624,7 @@ Web::WebDriver::Response Client::execute_script(Web::WebDriver::Parameters param
 {
     dbgln_if(WEBDRIVER_DEBUG, "Handling POST /session/<session_id>/execute/sync");
     auto session = TRY(find_session_with_id(parameters[0]));
-    return session->web_content_connection().execute_script(payload);
+    return session->execute_script(move(payload), Session::ScriptMode::Sync);
 }
 
 // 13.2.2 Execute Async Script, https://w3c.github.io/webdriver/#dfn-execute-async-script
@@ -629,7 +633,7 @@ Web::WebDriver::Response Client::execute_async_script(Web::WebDriver::Parameters
 {
     dbgln_if(WEBDRIVER_DEBUG, "Handling POST /session/<session_id>/execute/async");
     auto session = TRY(find_session_with_id(parameters[0]));
-    return session->web_content_connection().execute_async_script(payload);
+    return session->execute_script(move(payload), Session::ScriptMode::Async);
 }
 
 // 14.1 Get All Cookies, https://w3c.github.io/webdriver/#dfn-get-all-cookies
@@ -679,11 +683,11 @@ Web::WebDriver::Response Client::delete_all_cookies(Web::WebDriver::Parameters p
 
 // 15.7 Perform Actions, https://w3c.github.io/webdriver/#perform-actions
 // POST /session/{session id}/actions
-Web::WebDriver::Response Client::perform_actions(Web::WebDriver::Parameters parameters, JsonValue)
+Web::WebDriver::Response Client::perform_actions(Web::WebDriver::Parameters parameters, JsonValue payload)
 {
     dbgln_if(WEBDRIVER_DEBUG, "Handling POST /session/<session_id>/actions");
     auto session = TRY(find_session_with_id(parameters[0]));
-    return session->web_content_connection().perform_actions();
+    return session->web_content_connection().perform_actions(move(payload));
 }
 
 // 15.8 Release Actions, https://w3c.github.io/webdriver/#release-actions
@@ -751,11 +755,11 @@ Web::WebDriver::Response Client::take_element_screenshot(Web::WebDriver::Paramet
 
 // 18.1 Print Page, https://w3c.github.io/webdriver/#dfn-print-page
 // POST /session/{session id}/print
-Web::WebDriver::Response Client::print_page(Web::WebDriver::Parameters parameters, JsonValue)
+Web::WebDriver::Response Client::print_page(Web::WebDriver::Parameters parameters, JsonValue payload)
 {
     dbgln_if(WEBDRIVER_DEBUG, "Handling POST /session/<session id>/print");
     auto session = TRY(find_session_with_id(parameters[0]));
-    return session->web_content_connection().print_page();
+    return session->web_content_connection().print_page(move(payload));
 }
 
 }

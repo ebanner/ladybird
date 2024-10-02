@@ -322,24 +322,12 @@ Tab::Tab(BrowserWindow* window, RefPtr<WebView::WebContentClient> parent_client,
     QObject::connect(focus_location_editor_action, &QAction::triggered, this, &Tab::focus_location_editor);
 
     view().on_received_source = [this](auto const& url, auto const& source) {
-        auto html = WebView::highlight_source(url, source);
+        auto html = WebView::highlight_source(MUST(url.to_string()), source, Syntax::Language::HTML, WebView::HighlightOutputMode::FullDocument);
         m_window->new_tab_from_content(html, Web::HTML::ActivateTab::Yes);
     };
 
     view().on_inspector_requested_style_sheet_source = [this](auto const& identifier) {
         view().request_style_sheet_source(identifier);
-    };
-
-    view().on_navigate_back = [this]() {
-        back();
-    };
-
-    view().on_navigate_forward = [this]() {
-        forward();
-    };
-
-    view().on_refresh = [this]() {
-        reload();
     };
 
     view().on_restore_window = [this]() {
@@ -554,8 +542,8 @@ Tab::Tab(BrowserWindow* window, RefPtr<WebView::WebContentClient> parent_client,
     });
 
     m_link_context_menu = new QMenu("Link context menu", this);
-    m_link_context_menu->addAction(open_link_action);
     m_link_context_menu->addAction(open_link_in_new_tab_action);
+    m_link_context_menu->addAction(open_link_action);
     m_link_context_menu->addSeparator();
     m_link_context_menu->addAction(m_link_context_menu_copy_url_action);
     m_link_context_menu->addSeparator();
@@ -823,6 +811,8 @@ void Tab::copy_link_url(URL::URL const& url)
 
 void Tab::location_edit_return_pressed()
 {
+    if (m_location_edit->text().isEmpty())
+        return;
     navigate(m_location_edit->url());
 }
 
@@ -973,6 +963,11 @@ void Tab::set_preferred_languages(Vector<String> const& preferred_languages)
 void Tab::set_enable_do_not_track(bool enable)
 {
     m_view->set_enable_do_not_track(enable);
+}
+
+void Tab::set_enable_autoplay(bool enable)
+{
+    m_view->set_enable_autoplay(enable);
 }
 
 }

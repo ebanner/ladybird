@@ -46,6 +46,8 @@ public:
     Function<void()> on_open;
     Function<void(u16 code, ByteString reason, bool was_clean)> on_close;
     Function<void(Message message)> on_message;
+    Function<void(ReadyState)> on_ready_state_change;
+    Function<void(ByteString)> on_subprotocol;
 
     enum class Error {
         CouldNotEstablishConnection,
@@ -97,6 +99,8 @@ private:
 
     InternalState m_state { InternalState::NotStarted };
 
+    void set_state(InternalState);
+
     ByteString m_subprotocol_in_use { ByteString::empty() };
 
     ByteString m_websocket_key;
@@ -104,6 +108,8 @@ private:
     bool m_has_read_server_handshake_upgrade { false };
     bool m_has_read_server_handshake_connection { false };
     bool m_has_read_server_handshake_accept { false };
+
+    bool m_discard_connection_requested { false };
 
     u16 m_last_close_code { 1005 };
     ByteString m_last_close_message;

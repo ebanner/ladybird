@@ -212,9 +212,27 @@
     "inline-start",
     "inline-end"
   ],
+  "font-display": [
+    "auto",
+    "block",
+    "swap",
+    "fallback",
+    "optional"
+  ],
   "font-variant": [
     "normal",
     "small-caps"
+  ],
+  "font-width": [
+    "ultra-condensed",
+    "extra-condensed",
+    "condensed",
+    "semi-condensed",
+    "normal",
+    "semi-expanded",
+    "expanded",
+    "extra-expanded",
+    "ultra-expanded"
   ],
   "image-rendering": [
     "auto",
@@ -235,7 +253,9 @@
     "space-between",
     "space-around",
     "space-evenly",
-    "stretch"
+    "stretch",
+    "left",
+    "right"
   ],
   "justify-items": [
     "baseline",
@@ -250,7 +270,9 @@
     "self-start",
     "start",
     "stretch",
-    "unsafe"
+    "unsafe",
+    "left",
+    "right"
   ],
   "justify-self": [
     "auto",
@@ -265,7 +287,9 @@
     "self-start",
     "start",
     "stretch",
-    "unsafe"
+    "unsafe",
+    "left",
+    "right"
   ],
   "line-style": [
     "none",

@@ -990,7 +990,12 @@ static void update_the_source_set(DOM::Element& element)
         });
     }
 
-    // 4. For each child in elements:
+    // 4. Let img be el if el is an img element, otherwise null.
+    HTMLImageElement* img = nullptr;
+    if (is<HTMLImageElement>(element))
+        img = static_cast<HTMLImageElement*>(&element);
+
+    // 5. For each child in elements:
     for (auto child : elements) {
         // 1. If child is el:
         if (child == &element) {
@@ -1039,11 +1044,13 @@ static void update_the_source_set(DOM::Element& element)
                     default_source = href_value.release_value();
             }
 
-            // 10. Let el's source set be the result of creating a source set given default source, srcset, and sizes.
+            // 10. Let el's source set be the result of creating a source set given default source, srcset, sizes, and img.
             if (is<HTMLImageElement>(element))
-                static_cast<HTMLImageElement&>(element).set_source_set(SourceSet::create(element, default_source, srcset, sizes));
+                static_cast<HTMLImageElement&>(element).set_source_set(SourceSet::create(element, default_source, srcset, sizes, img));
             else if (is<HTMLLinkElement>(element))
                 TODO();
+
+            // 11. Return.
             return;
         }
         // 2. If child is not a source element, then continue.
@@ -1070,8 +1077,8 @@ static void update_the_source_set(DOM::Element& element)
             }
         }
 
-        // 7. Parse child's sizes attribute, and let source set's source size be the returned value.
-        source_set.m_source_size = parse_a_sizes_attribute(element.document(), child->get_attribute_value(HTML::AttributeNames::sizes));
+        // 7. Parse child's sizes attribute with img, and let source set's source size be the returned value.
+        source_set.m_source_size = parse_a_sizes_attribute(element, child->get_attribute_value(HTML::AttributeNames::sizes), img);
 
         // 8. If child has a type attribute, and its value is an unknown or unsupported MIME type, continue to the next child.
         if (child->has_attribute(HTML::AttributeNames::type)) {
@@ -1169,6 +1176,19 @@ void HTMLImageElement::set_decoding(String decoding)
         m_decoding_hint = ImageDecodingHint::Async;
     } else
         m_decoding_hint = ImageDecodingHint::Auto;
+}
+
+bool HTMLImageElement::allows_auto_sizes() const
+{
+    // An img element allows auto-sizes if:
+    // - its loading attribute is in the Lazy state, and
+    // - its sizes attribute's value is "auto" (ASCII case-insensitive), or starts with "auto," (ASCII case-insensitive).
+    if (lazy_loading_attribute() != LazyLoading::Lazy)
+        return false;
+    auto sizes = attribute(HTML::AttributeNames::sizes);
+    return sizes.has_value()
+        && (sizes->equals_ignoring_ascii_case("auto"sv)
+            || sizes->starts_with_bytes("auto,"sv, AK::CaseSensitivity::CaseInsensitive));
 }
 
 }

@@ -15,6 +15,7 @@
 #include <LibJS/Runtime/Array.h>
 #include <LibTextCodec/Decoder.h>
 #include <LibWeb/Bindings/MainThreadVM.h>
+#include <LibWeb/Crypto/Crypto.h>
 #include <LibWeb/Fetch/FetchMethod.h>
 #include <LibWeb/HTML/CanvasRenderingContext2D.h>
 #include <LibWeb/HTML/ErrorEvent.h>
@@ -72,6 +73,7 @@ void WindowOrWorkerGlobalScopeMixin::visit_edges(JS::Cell::Visitor& visitor)
     for (auto& entry : m_performance_entry_buffer_map)
         entry.value.visit_edges(visitor);
     visitor.visit(m_registered_event_sources);
+    visitor.visit(m_crypto);
 }
 
 void WindowOrWorkerGlobalScopeMixin::finalize()
@@ -745,6 +747,13 @@ JS::NonnullGCPtr<JS::Object> WindowOrWorkerGlobalScopeMixin::supported_entry_typ
 // https://html.spec.whatwg.org/multipage/webappapis.html#dom-reporterror
 void WindowOrWorkerGlobalScopeMixin::report_error(JS::Value e)
 {
+    // The reportError(e) method steps are to report an exception e for this.
+    report_an_exception(e);
+}
+
+// https://html.spec.whatwg.org/multipage/webappapis.html#report-an-exception
+void WindowOrWorkerGlobalScopeMixin::report_an_exception(JS::Value const& e)
+{
     auto& target = static_cast<DOM::EventTarget&>(this_impl());
     auto& realm = relevant_realm(target);
     auto& vm = realm.vm();
@@ -836,6 +845,17 @@ void WindowOrWorkerGlobalScopeMixin::report_error(JS::Value e)
         // https://html.spec.whatwg.org/multipage/webappapis.html#report-the-exception
         report_exception_to_console(e, realm, ErrorInPromise::No);
     }
+}
+
+// https://w3c.github.io/webcrypto/#dom-windoworworkerglobalscope-crypto
+JS::NonnullGCPtr<Crypto::Crypto> WindowOrWorkerGlobalScopeMixin::crypto()
+{
+    auto& platform_object = this_impl();
+    auto& realm = platform_object.realm();
+
+    if (!m_crypto)
+        m_crypto = platform_object.heap().allocate<Crypto::Crypto>(realm, realm);
+    return JS::NonnullGCPtr { *m_crypto };
 }
 
 }

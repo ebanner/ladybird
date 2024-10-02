@@ -346,7 +346,7 @@ ThrowCompletionOr<Value> Console::trace()
 
     auto& vm = realm().vm();
 
-    // 1. Let trace be some implementation-specific, potentially-interactive representation of the callstack from where this function was called.
+    // 1. Let trace be some implementation-defined, potentially-interactive representation of the callstack from where this function was called.
     Console::Trace trace;
     auto& execution_context_stack = vm.execution_context_stack();
     // NOTE: -2 to skip the console.trace() execution context
@@ -818,7 +818,7 @@ ThrowCompletionOr<MarkedVector<Value>> ConsoleClient::formatter(MarkedVector<Val
     auto find_specifier = [](StringView target) -> Optional<StringView> {
         size_t start_index = 0;
         while (start_index < target.length()) {
-            auto maybe_index = target.find('%');
+            auto maybe_index = target.find('%', start_index);
             if (!maybe_index.has_value())
                 return {};
 

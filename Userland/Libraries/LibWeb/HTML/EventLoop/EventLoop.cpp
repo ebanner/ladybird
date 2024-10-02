@@ -8,10 +8,13 @@
 #include <LibCore/EventLoop.h>
 #include <LibJS/Runtime/VM.h>
 #include <LibWeb/Bindings/MainThreadVM.h>
+#include <LibWeb/CSS/FontFaceSet.h>
+#include <LibWeb/CSS/StyleComputer.h>
 #include <LibWeb/DOM/Document.h>
 #include <LibWeb/HTML/BrowsingContext.h>
 #include <LibWeb/HTML/EventLoop/EventLoop.h>
 #include <LibWeb/HTML/Scripting/Environments.h>
+#include <LibWeb/HTML/Scripting/TemporaryExecutionContext.h>
 #include <LibWeb/HTML/TraversableNavigable.h>
 #include <LibWeb/HTML/Window.h>
 #include <LibWeb/HighResolutionTime/Performance.h>
@@ -173,6 +176,17 @@ void EventLoop::process()
 
     // 8. Microtasks: Perform a microtask checkpoint.
     perform_a_microtask_checkpoint();
+
+    if (m_is_running_reflow_steps) {
+        // NOTE: If we entered style-layout-repaint steps, then we need to wait for them to finish before doing next iteration.
+        schedule();
+        return;
+    }
+
+    m_is_running_reflow_steps = true;
+    ScopeGuard const guard = [this] {
+        m_is_running_reflow_steps = false;
+    };
 
     // 9. Let hasARenderingOpportunity be false.
     [[maybe_unused]] bool has_a_rendering_opportunity = false;
@@ -380,6 +394,14 @@ void EventLoop::process()
     // For each doc of docs, process top layer removals given doc.
     for_each_fully_active_document_in_docs([&](DOM::Document& document) {
         document.process_top_layer_removals();
+    });
+
+    // Not in the spec:
+    for_each_fully_active_document_in_docs([&](DOM::Document& document) {
+        if (document.readiness() == HTML::DocumentReadyState::Complete && document.style_computer().number_of_css_font_faces_with_loading_in_progress() == 0) {
+            HTML::TemporaryExecutionContext context(HTML::relevant_settings_object(document), HTML::TemporaryExecutionContext::CallbacksEnabled::Yes);
+            document.fonts()->resolve_ready_promise();
+        }
     });
 }
 

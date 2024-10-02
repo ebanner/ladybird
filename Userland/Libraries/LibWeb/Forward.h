@@ -115,6 +115,7 @@ class CSSKeyframesRule;
 class CSSKeywordValue;
 class CSSLayerBlockRule;
 class CSSLayerStatementRule;
+class CSSMathValue;
 class CSSMediaRule;
 class CSSOKLab;
 class CSSOKLCH;
@@ -127,7 +128,6 @@ class CSSStyleSheet;
 struct CSSStyleSheetInit;
 class CSSStyleValue;
 class CSSSupportsRule;
-class CalculatedStyleValue;
 class Clip;
 class ConicGradientStyleValue;
 class ContentStyleValue;
@@ -496,6 +496,8 @@ class Storage;
 class SubmitEvent;
 class TextMetrics;
 class TextTrack;
+class TextTrackCue;
+class TextTrackCueList;
 class TextTrackList;
 class Timer;
 class TimeRanges;
@@ -522,8 +524,8 @@ enum class AllowMultipleFiles;
 enum class MediaSeekMode;
 enum class SandboxingFlagSet;
 
-struct CrossOriginOpenerPolicy;
-struct CrossOriginOpenerPolicyEnforcementResult;
+struct OpenerPolicy;
+struct OpenerPolicyEnforcementResult;
 struct Environment;
 struct EnvironmentSettingsObject;
 struct NavigationParams;
@@ -786,6 +788,11 @@ using Promise = JS::PromiseCapability;
 
 namespace Web::WebSockets {
 class WebSocket;
+}
+
+namespace Web::WebVTT {
+class VTTCue;
+class VTTRegion;
 }
 
 namespace Web::XHR {

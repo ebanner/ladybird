@@ -13,18 +13,18 @@ namespace Web::Layout {
 
 class FlexFormattingContext final : public FormattingContext {
 public:
-    FlexFormattingContext(LayoutState&, Box const& flex_container, FormattingContext* parent);
+    FlexFormattingContext(LayoutState&, LayoutMode, Box const& flex_container, FormattingContext* parent);
     ~FlexFormattingContext();
 
     virtual bool inhibits_floating() const override { return true; }
 
-    virtual void run(Box const&, LayoutMode, AvailableSpace const&) override;
+    virtual void run(AvailableSpace const&) override;
     virtual CSSPixels automatic_content_width() const override;
     virtual CSSPixels automatic_content_height() const override;
 
     Box const& flex_container() const { return context_box(); }
 
-    virtual CSSPixelPoint calculate_static_position(Box const&) const override;
+    virtual StaticPositionRect calculate_static_position_rect(Box const&) const override;
 
 private:
     [[nodiscard]] bool should_treat_main_size_as_auto(Box const&) const;

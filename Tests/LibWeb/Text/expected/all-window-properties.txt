@@ -321,6 +321,7 @@ SVGUseElement
 Screen
 ScreenOrientation
 Selection
+ServiceWorker
 ServiceWorkerContainer
 ServiceWorkerRegistration
 Set
@@ -343,6 +344,8 @@ TextDecoder
 TextEncoder
 TextMetrics
 TextTrack
+TextTrackCue
+TextTrackCueList
 TextTrackList
 TimeRanges
 ToggleEvent
@@ -360,6 +363,8 @@ Uint32Array
 Uint8Array
 Uint8ClampedArray
 UserActivation
+VTTCue
+VTTRegion
 ValidityState
 VideoTrack
 VideoTrackList
@@ -382,12 +387,14 @@ XMLHttpRequest
 XMLHttpRequestEventTarget
 XMLHttpRequestUpload
 XMLSerializer
+__finishTest
 __preventMultipleTestFunctions
 animationFrame
 asyncTest
 printElement
 println
 promiseTest
+spoofCurrentURL
 test
 timeout
 webkitURL

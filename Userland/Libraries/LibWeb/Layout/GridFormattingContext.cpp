@@ -65,8 +65,8 @@ GridFormattingContext::GridTrack GridFormattingContext::GridTrack::create_gap(CS
     };
 }
 
-GridFormattingContext::GridFormattingContext(LayoutState& state, Box const& grid_container, FormattingContext* parent)
-    : FormattingContext(Type::Grid, state, grid_container, parent)
+GridFormattingContext::GridFormattingContext(LayoutState& state, LayoutMode layout_mode, Box const& grid_container, FormattingContext* parent)
+    : FormattingContext(Type::Grid, layout_mode, state, grid_container, parent)
 {
 }
 
@@ -88,7 +88,7 @@ CSSPixels GridFormattingContext::resolve_definite_track_size(CSS::GridSize const
     return 0;
 }
 
-int GridFormattingContext::count_of_repeated_auto_fill_or_fit_tracks(GridDimension dimension)
+int GridFormattingContext::count_of_repeated_auto_fill_or_fit_tracks(GridDimension dimension, CSS::ExplicitGridTrack const& repeated_track)
 {
     // https://www.w3.org/TR/css-grid-2/#auto-repeat
     // 7.2.3.2. Repeat-to-fill: auto-fill and auto-fit repetitions
@@ -102,12 +102,11 @@ int GridFormattingContext::count_of_repeated_auto_fill_or_fit_tracks(GridDimensi
     // content box of its grid container
 
     auto const& grid_computed_values = grid_container().computed_values();
-    auto const& track_list = dimension == GridDimension::Row ? grid_computed_values.grid_template_rows().track_list() : grid_computed_values.grid_template_columns().track_list();
     CSSPixels size_of_repeated_tracks = 0;
     // (treating each track as its max track sizing function if that is definite or its minimum track sizing
     // function otherwise, flooring the max track sizing function by the min track sizing function if both
     // are definite, and taking gap into account)
-    auto const& repeat_track_list = track_list.first().repeat().grid_track_size_list().track_list();
+    auto const& repeat_track_list = repeated_track.repeat().grid_track_size_list().track_list();
     for (auto const& explicit_grid_track : repeat_track_list) {
         auto const& track_sizing_function = explicit_grid_track;
         CSSPixels track_size = 0;
@@ -422,7 +421,7 @@ void GridFormattingContext::initialize_grid_tracks_from_definition(GridDimension
         int repeat_count = 1;
         if (track_definition.is_repeat()) {
             if (track_definition.repeat().is_auto_fill() || track_definition.repeat().is_auto_fit())
-                repeat_count = count_of_repeated_auto_fill_or_fit_tracks(dimension);
+                repeat_count = count_of_repeated_auto_fill_or_fit_tracks(dimension, track_definition);
             else
                 repeat_count = track_definition.repeat().repeat_count();
         }
@@ -1427,6 +1426,10 @@ CSS::JustifyItems GridFormattingContext::justification_for_item(Box const& box) 
         return CSS::JustifyItems::Safe;
     case CSS::JustifySelf::Unsafe:
         return CSS::JustifyItems::Unsafe;
+    case CSS::JustifySelf::Left:
+        return CSS::JustifyItems::Left;
+    case CSS::JustifySelf::Right:
+        return CSS::JustifyItems::Right;
     default:
         VERIFY_NOT_REACHED();
     }
@@ -1488,7 +1491,7 @@ void GridFormattingContext::resolve_grid_item_widths()
             .width = box_state.content_width()
         };
 
-        auto try_compute_width = [&](CSSPixels a_width) -> ItemAlignment {
+        auto try_compute_width = [&](CSSPixels a_width, CSS::Size const& computed_width) -> ItemAlignment {
             ItemAlignment result = initial;
             result.width = a_width;
 
@@ -1501,7 +1504,7 @@ void GridFormattingContext::resolve_grid_item_widths()
                 result.margin_left = free_space_left_for_margins;
             } else if (computed_values.margin().right().is_auto()) {
                 result.margin_right = free_space_left_for_margins;
-            } else if (computed_values.width().is_auto()) {
+            } else if (computed_width.is_auto()) {
                 result.width += free_space_left_for_margins;
             }
 
@@ -1517,11 +1520,13 @@ void GridFormattingContext::resolve_grid_item_widths()
                 break;
             case CSS::JustifyItems::Start:
             case CSS::JustifyItems::FlexStart:
+            case CSS::JustifyItems::Left:
                 result.margin_right += free_space_left_for_alignment;
                 result.width = a_width;
                 break;
             case CSS::JustifyItems::End:
             case CSS::JustifyItems::FlexEnd:
+            case CSS::JustifyItems::Right:
                 result.margin_left += free_space_left_for_alignment;
                 result.width = a_width;
                 break;
@@ -1535,17 +1540,17 @@ void GridFormattingContext::resolve_grid_item_widths()
         ItemAlignment used_alignment;
         AvailableSpace available_space { AvailableSize::make_definite(containing_block_width), AvailableSize::make_indefinite() };
         if (computed_width.is_auto()) {
-            used_alignment = try_compute_width(calculate_fit_content_width(item.box, available_space));
+            used_alignment = try_compute_width(calculate_fit_content_width(item.box, available_space), computed_width);
         } else if (computed_width.is_fit_content()) {
-            used_alignment = try_compute_width(calculate_fit_content_width(item.box, available_space));
+            used_alignment = try_compute_width(calculate_fit_content_width(item.box, available_space), computed_width);
         } else {
             auto width_px = calculate_inner_width(item.box, available_space.width, computed_width);
-            used_alignment = try_compute_width(width_px);
+            used_alignment = try_compute_width(width_px, computed_width);
         }
 
         if (!should_treat_max_width_as_none(item.box, m_available_space->width)) {
             auto max_width_px = calculate_inner_width(item.box, available_space.width, computed_values.max_width());
-            auto max_width_alignment = try_compute_width(max_width_px);
+            auto max_width_alignment = try_compute_width(max_width_px, computed_values.max_width());
             if (used_alignment.width > max_width_alignment.width) {
                 used_alignment = max_width_alignment;
             }
@@ -1553,7 +1558,7 @@ void GridFormattingContext::resolve_grid_item_widths()
 
         if (!computed_values.min_width().is_auto()) {
             auto min_width_px = calculate_inner_width(item.box, available_space.width, computed_values.min_width());
-            auto min_width_alignment = try_compute_width(min_width_px);
+            auto min_width_alignment = try_compute_width(min_width_px, computed_values.min_width());
             if (used_alignment.width < min_width_alignment.width) {
                 used_alignment = min_width_alignment;
             }
@@ -1745,7 +1750,7 @@ CSSPixelRect GridFormattingContext::get_grid_area_rect(GridItem const& grid_item
         auto free_space = grid_container_width - sum_base_size_of_columns;
         x_start = free_space / 2;
         x_end = free_space / 2;
-    } else if (justify_content == CSS::JustifyContent::End) {
+    } else if (justify_content == CSS::JustifyContent::End || justify_content == CSS::JustifyContent::Right) {
         auto free_space = grid_container_width - sum_base_size_of_columns;
         x_start = free_space;
         x_end = free_space;
@@ -1766,7 +1771,7 @@ CSSPixelRect GridFormattingContext::get_grid_area_rect(GridItem const& grid_item
     return { x_start, y_start, x_end - x_start, y_end - y_start };
 }
 
-void GridFormattingContext::run(Box const&, LayoutMode, AvailableSpace const& available_space)
+void GridFormattingContext::run(AvailableSpace const& available_space)
 {
     m_available_space = available_space;
 
@@ -1892,11 +1897,12 @@ void GridFormattingContext::run(Box const&, LayoutMode, AvailableSpace const& av
     m_state.get_mutable(grid_container()).set_grid_template_rows(CSS::GridTrackSizeListStyleValue::create(move(grid_track_rows)));
 }
 
-void GridFormattingContext::layout_absolutely_positioned_element(Box const& box, AvailableSpace const& available_space)
+void GridFormattingContext::layout_absolutely_positioned_element(Box const& box)
 {
-    auto& containing_block_state = m_state.get_mutable(*box.containing_block());
     auto& box_state = m_state.get_mutable(box);
     auto const& computed_values = box.computed_values();
+
+    auto is_auto_positioned = is_auto_positioned_track(computed_values.grid_row_start(), computed_values.grid_row_end()) || is_auto_positioned_track(computed_values.grid_column_start(), computed_values.grid_column_end());
 
     auto row_placement_position = resolve_grid_position(box, GridDimension::Row);
     auto column_placement_position = resolve_grid_position(box, GridDimension::Column);
@@ -1907,6 +1913,10 @@ void GridFormattingContext::layout_absolutely_positioned_element(Box const& box,
     auto column_span = column_placement_position.span;
 
     GridItem item { box, row_start, row_span, column_start, column_span };
+    auto grid_area_rect = get_grid_area_rect(item);
+    auto available_width = AvailableSize::make_definite(grid_area_rect.width());
+    auto available_height = AvailableSize::make_definite(grid_area_rect.height());
+    AvailableSpace available_space { available_width, available_height };
 
     // The border computed values are not changed by the compute_height & width calculations below.
     // The spec only adjusts and computes sizes, insets and margins.
@@ -1914,6 +1924,10 @@ void GridFormattingContext::layout_absolutely_positioned_element(Box const& box,
     box_state.border_right = box.computed_values().border_right().width;
     box_state.border_top = box.computed_values().border_top().width;
     box_state.border_bottom = box.computed_values().border_bottom().width;
+    box_state.padding_left = box.computed_values().padding().left().to_px(grid_container(), grid_area_rect.width());
+    box_state.padding_right = box.computed_values().padding().right().to_px(grid_container(), grid_area_rect.width());
+    box_state.padding_top = box.computed_values().padding().top().to_px(grid_container(), grid_area_rect.width());
+    box_state.padding_bottom = box.computed_values().padding().bottom().to_px(grid_container(), grid_area_rect.width());
 
     compute_width_for_absolutely_positioned_element(box, available_space);
 
@@ -1927,8 +1941,7 @@ void GridFormattingContext::layout_absolutely_positioned_element(Box const& box,
     compute_height_for_absolutely_positioned_element(box, available_space, BeforeOrAfterInsideLayout::After);
 
     if (computed_values.inset().left().is_auto() && computed_values.inset().right().is_auto()) {
-        auto containing_block_width = containing_block_state.content_width();
-        auto width_left_for_alignment = containing_block_width - box_state.margin_box_width();
+        auto width_left_for_alignment = grid_area_rect.width() - box_state.margin_box_width();
         switch (justification_for_item(box)) {
         case CSS::JustifyItems::Normal:
         case CSS::JustifyItems::Stretch:
@@ -1939,10 +1952,12 @@ void GridFormattingContext::layout_absolutely_positioned_element(Box const& box,
             break;
         case CSS::JustifyItems::Start:
         case CSS::JustifyItems::FlexStart:
+        case CSS::JustifyItems::Left:
             box_state.inset_right = width_left_for_alignment;
             break;
         case CSS::JustifyItems::End:
         case CSS::JustifyItems::FlexEnd:
+        case CSS::JustifyItems::Right:
             box_state.inset_left = width_left_for_alignment;
             break;
         default:
@@ -1951,8 +1966,7 @@ void GridFormattingContext::layout_absolutely_positioned_element(Box const& box,
     }
 
     if (computed_values.inset().top().is_auto() && computed_values.inset().bottom().is_auto()) {
-        auto containing_block_height = containing_block_state.content_height();
-        auto height_left_for_alignment = containing_block_height - box_state.margin_box_height();
+        auto height_left_for_alignment = grid_area_rect.height() - box_state.margin_box_height();
         switch (alignment_for_item(box)) {
         case CSS::AlignItems::Baseline:
             // FIXME: Not implemented
@@ -1984,12 +1998,15 @@ void GridFormattingContext::layout_absolutely_positioned_element(Box const& box,
     // The offset properties (top/right/bottom/left) then indicate offsets inwards from the corresponding
     // edges of this containing block, as normal.
     CSSPixelPoint used_offset;
-    auto grid_area_offset = get_grid_area_rect(item);
-    used_offset.set_x(grid_area_offset.x() + box_state.inset_left + box_state.margin_box_left());
-    used_offset.set_y(grid_area_offset.y() + box_state.inset_top + box_state.margin_box_top());
+    used_offset.set_x(grid_area_rect.x() + box_state.inset_left + box_state.margin_box_left());
+    used_offset.set_y(grid_area_rect.y() + box_state.inset_top + box_state.margin_box_top());
 
-    // NOTE: Absolutely positioned boxes are relative to the *padding edge* of the containing block.
-    used_offset.translate_by(-containing_block_state.padding_left, -containing_block_state.padding_top);
+    // NOTE: Absolutely positioned boxes with auto-placement are relative to the *padding edge* of the containing block.
+    if (is_auto_positioned) {
+        auto const& containing_block_state = m_state.get_mutable(*box.containing_block());
+        used_offset.translate_by(-containing_block_state.padding_left, -containing_block_state.padding_top);
+    }
+
     box_state.set_content_offset(used_offset);
 
     if (independent_formatting_context)
@@ -1998,15 +2015,20 @@ void GridFormattingContext::layout_absolutely_positioned_element(Box const& box,
 
 void GridFormattingContext::parent_context_did_dimension_child_root_box()
 {
+    if (m_layout_mode != LayoutMode::Normal)
+        return;
+
     grid_container().for_each_child_of_type<Box>([&](Layout::Box& box) {
         if (box.is_absolutely_positioned()) {
-            auto& cb_state = m_state.get(*box.containing_block());
-            auto available_width = AvailableSize::make_definite(cb_state.content_width() + cb_state.padding_left + cb_state.padding_right);
-            auto available_height = AvailableSize::make_definite(cb_state.content_height() + cb_state.padding_top + cb_state.padding_bottom);
-            layout_absolutely_positioned_element(box, AvailableSpace(available_width, available_height));
+            m_state.get_mutable(box).set_static_position_rect(calculate_static_position_rect(box));
         }
         return IterationDecision::Continue;
     });
+
+    for (auto const& child : grid_container().contained_abspos_children()) {
+        auto const& box = verify_cast<Box>(*child);
+        layout_absolutely_positioned_element(box);
+    }
 }
 
 void GridFormattingContext::determine_intrinsic_size_of_grid_container(AvailableSpace const& available_space)
@@ -2096,7 +2118,7 @@ void GridFormattingContext::init_grid_lines(GridDimension dimension)
                 } else if (explicit_track.is_repeat()) {
                     int repeat_count = 0;
                     if (explicit_track.repeat().is_auto_fill() || explicit_track.repeat().is_auto_fit())
-                        repeat_count = count_of_repeated_auto_fill_or_fit_tracks(dimension);
+                        repeat_count = count_of_repeated_auto_fill_or_fit_tracks(dimension, explicit_track);
                     else
                         repeat_count = explicit_track.repeat().repeat_count();
                     auto const& repeat_track = explicit_track.repeat();

@@ -70,25 +70,26 @@ void ViewportPaintable::assign_scroll_frames()
     for_each_in_inclusive_subtree_of_type<PaintableBox>([&](auto& paintable_box) {
         RefPtr<ScrollFrame> sticky_scroll_frame;
         if (paintable_box.is_sticky_position()) {
-            sticky_scroll_frame = adopt_ref(*new ScrollFrame());
-            sticky_scroll_frame->id = next_id++;
             auto const* nearest_scrollable_ancestor = paintable_box.nearest_scrollable_ancestor();
+            RefPtr<ScrollFrame const> parent_scroll_frame;
             if (nearest_scrollable_ancestor) {
-                sticky_scroll_frame->parent = nearest_scrollable_ancestor->nearest_scroll_frame();
+                parent_scroll_frame = nearest_scrollable_ancestor->nearest_scroll_frame();
             }
+            sticky_scroll_frame = adopt_ref(*new ScrollFrame(next_id++, parent_scroll_frame));
+
             const_cast<PaintableBox&>(paintable_box).set_enclosing_scroll_frame(sticky_scroll_frame);
             const_cast<PaintableBox&>(paintable_box).set_own_scroll_frame(sticky_scroll_frame);
             sticky_state.set(paintable_box, sticky_scroll_frame);
         }
 
         if (paintable_box.has_scrollable_overflow() || is<ViewportPaintable>(paintable_box)) {
-            auto scroll_frame = adopt_ref(*new ScrollFrame());
-            scroll_frame->id = next_id++;
+            RefPtr<ScrollFrame const> parent_scroll_frame;
             if (sticky_scroll_frame) {
-                scroll_frame->parent = sticky_scroll_frame;
+                parent_scroll_frame = sticky_scroll_frame;
             } else {
-                scroll_frame->parent = paintable_box.nearest_scroll_frame();
+                parent_scroll_frame = paintable_box.nearest_scroll_frame();
             }
+            auto scroll_frame = adopt_ref(*new ScrollFrame(next_id++, parent_scroll_frame));
             paintable_box.set_own_scroll_frame(scroll_frame);
             scroll_state.set(paintable_box, move(scroll_frame));
         }
@@ -252,13 +253,13 @@ void ViewportPaintable::refresh_scroll_state()
             }
         }
 
-        scroll_frame.own_offset = sticky_offset;
+        scroll_frame.set_own_offset(sticky_offset);
     }
 
     for (auto& it : scroll_state) {
         auto const& paintable_box = *it.key;
         auto& scroll_frame = *it.value;
-        scroll_frame.own_offset = -paintable_box.scroll_offset();
+        scroll_frame.set_own_offset(-paintable_box.scroll_offset());
     }
 }
 
@@ -283,11 +284,11 @@ JS::GCPtr<Selection::Selection> ViewportPaintable::selection() const
     return const_cast<DOM::Document&>(document()).get_selection();
 }
 
-void ViewportPaintable::recompute_selection_states()
+void ViewportPaintable::update_selection()
 {
-    // 1. Start by resetting the selection state of all layout nodes to None.
+    // 1. Start by setting all layout nodes to unselected.
     for_each_in_inclusive_subtree([&](auto& layout_node) {
-        layout_node.set_selection_state(SelectionState::None);
+        layout_node.set_selected(false);
         return TraversalDecision::Continue;
     });
 
@@ -302,10 +303,28 @@ void ViewportPaintable::recompute_selection_states()
     auto* start_container = range->start_container();
     auto* end_container = range->end_container();
 
-    // 3. If the selection starts and ends in the same node:
+    // 3. Mark the nodes included in range selected.
+    for (auto* node = start_container; node && node != end_container->next_in_pre_order(); node = node->next_in_pre_order()) {
+        if (auto* paintable = node->paintable())
+            paintable->set_selected(true);
+    }
+}
+
+void ViewportPaintable::recompute_selection_states(DOM::Range& range)
+{
+    // 1. Start by resetting the selection state of all layout nodes to None.
+    for_each_in_inclusive_subtree([&](auto& layout_node) {
+        layout_node.set_selection_state(SelectionState::None);
+        return TraversalDecision::Continue;
+    });
+
+    auto* start_container = range.start_container();
+    auto* end_container = range.end_container();
+
+    // 2. If the selection starts and ends in the same node:
     if (start_container == end_container) {
         // 1. If the selection starts and ends at the same offset, return.
-        if (range->start_offset() == range->end_offset()) {
+        if (range.start_offset() == range.end_offset()) {
             // NOTE: A zero-length selection should not be visible.
             return;
         }
@@ -318,7 +337,7 @@ void ViewportPaintable::recompute_selection_states()
         }
     }
 
-    // 4. Mark the selection start node as Start (if text) or Full (if anything else).
+    // 3. Mark the selection start node as Start (if text) or Full (if anything else).
     if (auto* paintable = start_container->paintable()) {
         if (is<DOM::Text>(*start_container))
             paintable->set_selection_state(SelectionState::Start);
@@ -326,7 +345,7 @@ void ViewportPaintable::recompute_selection_states()
             paintable->set_selection_state(SelectionState::Full);
     }
 
-    // 5. Mark the selection end node as End (if text) or Full (if anything else).
+    // 4. Mark the selection end node as End (if text) or Full (if anything else).
     if (auto* paintable = end_container->paintable()) {
         if (is<DOM::Text>(*end_container))
             paintable->set_selection_state(SelectionState::End);
@@ -334,7 +353,7 @@ void ViewportPaintable::recompute_selection_states()
             paintable->set_selection_state(SelectionState::Full);
     }
 
-    // 6. Mark the nodes between start node and end node (in tree order) as Full.
+    // 5. Mark the nodes between start node and end node (in tree order) as Full.
     for (auto* node = start_container->next_in_pre_order(); node && node != end_container; node = node->next_in_pre_order()) {
         if (auto* paintable = node->paintable())
             paintable->set_selection_state(SelectionState::Full);

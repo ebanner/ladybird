@@ -30,8 +30,8 @@
 
 namespace Web::Layout {
 
-SVGFormattingContext::SVGFormattingContext(LayoutState& state, Box const& box, FormattingContext* parent, Gfx::AffineTransform parent_viewbox_transform)
-    : FormattingContext(Type::SVG, state, box, parent)
+SVGFormattingContext::SVGFormattingContext(LayoutState& state, LayoutMode layout_mode, Box const& box, FormattingContext* parent, Gfx::AffineTransform parent_viewbox_transform)
+    : FormattingContext(Type::SVG, layout_mode, state, box, parent)
     , m_parent_viewbox_transform(parent_viewbox_transform)
 {
 }
@@ -171,13 +171,13 @@ static bool is_container_element(Node const& node)
     return false;
 }
 
-void SVGFormattingContext::run(Box const& box, LayoutMode, AvailableSpace const& available_space)
+void SVGFormattingContext::run(AvailableSpace const& available_space)
 {
     // NOTE: SVG doesn't have a "formatting context" in the spec, but this is the most
     //       obvious way to drive SVG layout in our engine at the moment.
 
-    auto& svg_viewport = dynamic_cast<SVG::SVGViewport const&>(*box.dom_node());
-    auto& svg_box_state = m_state.get_mutable(box);
+    auto& svg_viewport = dynamic_cast<SVG::SVGViewport const&>(*context_box().dom_node());
+    auto& svg_box_state = m_state.get_mutable(context_box());
 
     // NOTE: We consider all SVG root elements to have definite size in both axes.
     //       I'm not sure if this is good or bad, but our viewport transform logic depends on it.
@@ -254,7 +254,7 @@ void SVGFormattingContext::run(Box const& box, LayoutMode, AvailableSpace const&
     m_svg_offset = svg_box_state.offset;
     m_viewport_size = { viewport_width, viewport_height };
 
-    box.for_each_child_of_type<Box>([&](Box const& child) {
+    context_box().for_each_child_of_type<Box>([&](Box const& child) {
         layout_svg_element(child);
         return IterationDecision::Continue;
     });
@@ -265,8 +265,8 @@ void SVGFormattingContext::layout_svg_element(Box const& child)
     if (is<SVG::SVGViewport>(child.dom_node())) {
         layout_nested_viewport(child);
     } else if (is<SVG::SVGForeignObjectElement>(child.dom_node()) && is<BlockContainer>(child)) {
-        Layout::BlockFormattingContext bfc(m_state, static_cast<BlockContainer const&>(child), this);
-        bfc.run(child, LayoutMode::Normal, *m_available_space);
+        Layout::BlockFormattingContext bfc(m_state, LayoutMode::Normal, static_cast<BlockContainer const&>(child), this);
+        bfc.run(*m_available_space);
         auto& child_state = m_state.get_mutable(child);
         child_state.set_content_offset(child_state.offset.translated(m_svg_offset));
         child.for_each_child_of_type<SVGMaskBox>([&](SVGMaskBox const& child) {
@@ -282,7 +282,7 @@ void SVGFormattingContext::layout_nested_viewport(Box const& viewport)
 {
     // Layout for a nested SVG viewport.
     // https://svgwg.org/svg2-draft/coords.html#EstablishingANewSVGViewport.
-    SVGFormattingContext nested_context(m_state, viewport, this, m_current_viewbox_transform);
+    SVGFormattingContext nested_context(m_state, LayoutMode::Normal, viewport, this, m_current_viewbox_transform);
     auto& nested_viewport_state = m_state.get_mutable(viewport);
     auto resolve_dimension = [](auto& node, auto size, auto reference_value) {
         // The value auto for width and height on the ‘svg’ element is treated as 100%.
@@ -301,7 +301,7 @@ void SVGFormattingContext::layout_nested_viewport(Box const& viewport)
     nested_viewport_state.set_content_height(nested_viewport_height);
     nested_viewport_state.set_has_definite_width(true);
     nested_viewport_state.set_has_definite_height(true);
-    nested_context.run(static_cast<Box const&>(viewport), LayoutMode::Normal, *m_available_space);
+    nested_context.run(*m_available_space);
 }
 
 Gfx::Path SVGFormattingContext::compute_path_for_text(SVGTextBox const& text_box)
@@ -456,10 +456,10 @@ void SVGFormattingContext::layout_mask_or_clip(SVGBox const& mask_or_clip)
         layout_state.set_content_height(m_viewport_size.height());
     }
     // Pretend masks/clips are a viewport so we can scale the contents depending on the `contentUnits`.
-    SVGFormattingContext nested_context(m_state, mask_or_clip, this, parent_viewbox_transform);
+    SVGFormattingContext nested_context(m_state, LayoutMode::Normal, mask_or_clip, this, parent_viewbox_transform);
     layout_state.set_has_definite_width(true);
     layout_state.set_has_definite_height(true);
-    nested_context.run(static_cast<Box const&>(mask_or_clip), LayoutMode::Normal, *m_available_space);
+    nested_context.run(*m_available_space);
 }
 
 void SVGFormattingContext::layout_container_element(SVGBox const& container)

@@ -24,28 +24,28 @@ namespace Web::HTML {
 
 // https://html.spec.whatwg.org/multipage/input.html#attr-input-type
 #define ENUMERATE_HTML_INPUT_TYPE_ATTRIBUTES                                  \
-    __ENUMERATE_HTML_INPUT_TYPE_ATTRIBUTE(hidden, Hidden)                     \
-    __ENUMERATE_HTML_INPUT_TYPE_ATTRIBUTE(text, Text)                         \
-    __ENUMERATE_HTML_INPUT_TYPE_ATTRIBUTE(search, Search)                     \
-    __ENUMERATE_HTML_INPUT_TYPE_ATTRIBUTE(tel, Telephone)                     \
-    __ENUMERATE_HTML_INPUT_TYPE_ATTRIBUTE(url, URL)                           \
-    __ENUMERATE_HTML_INPUT_TYPE_ATTRIBUTE(email, Email)                       \
-    __ENUMERATE_HTML_INPUT_TYPE_ATTRIBUTE(password, Password)                 \
-    __ENUMERATE_HTML_INPUT_TYPE_ATTRIBUTE(date, Date)                         \
-    __ENUMERATE_HTML_INPUT_TYPE_ATTRIBUTE(month, Month)                       \
-    __ENUMERATE_HTML_INPUT_TYPE_ATTRIBUTE(week, Week)                         \
-    __ENUMERATE_HTML_INPUT_TYPE_ATTRIBUTE(time, Time)                         \
+    __ENUMERATE_HTML_INPUT_TYPE_ATTRIBUTE("hidden", Hidden)                   \
+    __ENUMERATE_HTML_INPUT_TYPE_ATTRIBUTE("text", Text)                       \
+    __ENUMERATE_HTML_INPUT_TYPE_ATTRIBUTE("search", Search)                   \
+    __ENUMERATE_HTML_INPUT_TYPE_ATTRIBUTE("tel", Telephone)                   \
+    __ENUMERATE_HTML_INPUT_TYPE_ATTRIBUTE("url", URL)                         \
+    __ENUMERATE_HTML_INPUT_TYPE_ATTRIBUTE("email", Email)                     \
+    __ENUMERATE_HTML_INPUT_TYPE_ATTRIBUTE("password", Password)               \
+    __ENUMERATE_HTML_INPUT_TYPE_ATTRIBUTE("date", Date)                       \
+    __ENUMERATE_HTML_INPUT_TYPE_ATTRIBUTE("month", Month)                     \
+    __ENUMERATE_HTML_INPUT_TYPE_ATTRIBUTE("week", Week)                       \
+    __ENUMERATE_HTML_INPUT_TYPE_ATTRIBUTE("time", Time)                       \
     __ENUMERATE_HTML_INPUT_TYPE_ATTRIBUTE("datetime-local", LocalDateAndTime) \
-    __ENUMERATE_HTML_INPUT_TYPE_ATTRIBUTE(number, Number)                     \
-    __ENUMERATE_HTML_INPUT_TYPE_ATTRIBUTE(range, Range)                       \
-    __ENUMERATE_HTML_INPUT_TYPE_ATTRIBUTE(color, Color)                       \
-    __ENUMERATE_HTML_INPUT_TYPE_ATTRIBUTE(checkbox, Checkbox)                 \
-    __ENUMERATE_HTML_INPUT_TYPE_ATTRIBUTE(radio, RadioButton)                 \
-    __ENUMERATE_HTML_INPUT_TYPE_ATTRIBUTE(file, FileUpload)                   \
-    __ENUMERATE_HTML_INPUT_TYPE_ATTRIBUTE(submit, SubmitButton)               \
-    __ENUMERATE_HTML_INPUT_TYPE_ATTRIBUTE(image, ImageButton)                 \
-    __ENUMERATE_HTML_INPUT_TYPE_ATTRIBUTE(reset, ResetButton)                 \
-    __ENUMERATE_HTML_INPUT_TYPE_ATTRIBUTE(button, Button)
+    __ENUMERATE_HTML_INPUT_TYPE_ATTRIBUTE("number", Number)                   \
+    __ENUMERATE_HTML_INPUT_TYPE_ATTRIBUTE("range", Range)                     \
+    __ENUMERATE_HTML_INPUT_TYPE_ATTRIBUTE("color", Color)                     \
+    __ENUMERATE_HTML_INPUT_TYPE_ATTRIBUTE("checkbox", Checkbox)               \
+    __ENUMERATE_HTML_INPUT_TYPE_ATTRIBUTE("radio", RadioButton)               \
+    __ENUMERATE_HTML_INPUT_TYPE_ATTRIBUTE("file", FileUpload)                 \
+    __ENUMERATE_HTML_INPUT_TYPE_ATTRIBUTE("submit", SubmitButton)             \
+    __ENUMERATE_HTML_INPUT_TYPE_ATTRIBUTE("image", ImageButton)               \
+    __ENUMERATE_HTML_INPUT_TYPE_ATTRIBUTE("reset", ResetButton)               \
+    __ENUMERATE_HTML_INPUT_TYPE_ATTRIBUTE("button", Button)
 
 class HTMLInputElement final
     : public HTMLElement
@@ -204,12 +204,17 @@ public:
     bool step_up_or_down_applies() const;
     bool select_applies() const;
     bool selection_or_range_applies() const;
+    bool has_selectable_text() const;
+
+    static bool selection_or_range_applies_for_type_state(TypeAttributeState);
 
 protected:
     void selection_was_changed(size_t selection_start, size_t selection_end) override;
 
 private:
     HTMLInputElement(DOM::Document&, DOM::QualifiedName);
+
+    void type_attribute_changed(TypeAttributeState old_state, TypeAttributeState new_state);
 
     // ^DOM::Node
     virtual bool is_html_input_element() const final { return true; }
@@ -280,6 +285,7 @@ private:
         DefaultOn,
         Filename,
     };
+    static ValueAttributeMode value_attribute_mode_for_type_state(TypeAttributeState);
     ValueAttributeMode value_attribute_mode() const;
 
     void update_placeholder_visibility();
@@ -299,8 +305,9 @@ private:
     JS::GCPtr<DOM::Element> m_file_label;
 
     void update_slider_shadow_tree_elements();
-    JS::GCPtr<DOM::Element> m_slider_thumb;
+    JS::GCPtr<DOM::Element> m_slider_runnable_track;
     JS::GCPtr<DOM::Element> m_slider_progress_element;
+    JS::GCPtr<DOM::Element> m_slider_thumb;
 
     JS::GCPtr<DecodedImageData> image_data() const;
     JS::GCPtr<SharedResourceRequest> m_resource_request;

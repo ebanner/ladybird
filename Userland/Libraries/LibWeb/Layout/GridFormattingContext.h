@@ -101,12 +101,12 @@ private:
 
 class GridFormattingContext final : public FormattingContext {
 public:
-    explicit GridFormattingContext(LayoutState&, Box const& grid_container, FormattingContext* parent);
+    explicit GridFormattingContext(LayoutState&, LayoutMode, Box const& grid_container, FormattingContext* parent);
     ~GridFormattingContext();
 
     virtual bool inhibits_floating() const override { return true; }
 
-    virtual void run(Box const&, LayoutMode, AvailableSpace const& available_space) override;
+    virtual void run(AvailableSpace const& available_space) override;
     virtual CSSPixels automatic_content_width() const override;
     virtual CSSPixels automatic_content_height() const override;
 
@@ -238,7 +238,7 @@ private:
     void determine_grid_container_height();
     void determine_intrinsic_size_of_grid_container(AvailableSpace const& available_space);
 
-    void layout_absolutely_positioned_element(Box const&, AvailableSpace const&);
+    void layout_absolutely_positioned_element(Box const&);
     virtual void parent_context_did_dimension_child_root_box() override;
 
     void resolve_grid_item_widths();
@@ -248,7 +248,7 @@ private:
 
     Optional<int> get_line_index_by_line_name(GridDimension dimension, String const&);
     CSSPixels resolve_definite_track_size(CSS::GridSize const&, AvailableSpace const&);
-    int count_of_repeated_auto_fill_or_fit_tracks(GridDimension);
+    int count_of_repeated_auto_fill_or_fit_tracks(GridDimension, CSS::ExplicitGridTrack const& repeated_track);
 
     void build_grid_areas();
 

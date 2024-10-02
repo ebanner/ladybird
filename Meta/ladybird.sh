@@ -88,6 +88,7 @@ get_top_dir() {
 }
 
 create_build_dir() {
+    check_program_version_at_least CMake cmake 3.25 || exit 1
     cmake --preset "$BUILD_PRESET" "${CMAKE_ARGS[@]}" -S "$LADYBIRD_SOURCE_DIR" -B "$BUILD_DIR"
 }
 
@@ -207,7 +208,11 @@ build_and_run_lagom_target() {
     local lagom_args=("${CMD_ARGS[@]:1}")
 
     if [ -z "$lagom_target" ]; then
-        lagom_target="ladybird"
+        lagom_target="Ladybird"
+    fi
+
+    if [ "$lagom_target" = "ladybird" ]; then
+        lagom_target="Ladybird"
     fi
 
     # FIXME: Find some way to centralize these b/w CMakePresets.json, CI files, Documentation and here.
@@ -218,14 +223,10 @@ build_and_run_lagom_target() {
 
     build_target "${lagom_target}"
 
-    if [ "$lagom_target" = "ladybird" ] && [ "$(uname -s)" = "Darwin" ]; then
-        "$BUILD_DIR/bin/Ladybird.app/Contents/MacOS/Ladybird" "${lagom_args[@]}"
+    if [[ "$lagom_target" =~ ^(headless-browser|ImageDecoder|Ladybird|RequestServer|WebContent|WebDriver|WebWorker)$ ]] && [ "$(uname -s)" = "Darwin" ]; then
+        "$BUILD_DIR/bin/Ladybird.app/Contents/MacOS/$lagom_target" "${lagom_args[@]}"
     else
-        local lagom_bin="$lagom_target"
-        if [ "$lagom_bin" = "ladybird" ]; then
-            lagom_bin="Ladybird"
-        fi
-        "$BUILD_DIR/bin/$lagom_bin" "${lagom_args[@]}"
+        "$BUILD_DIR/bin/$lagom_target" "${lagom_args[@]}"
     fi
 }
 

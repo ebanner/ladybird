@@ -65,6 +65,7 @@ set(SOURCES
     CSS/Frequency.cpp
     CSS/GridTrackPlacement.cpp
     CSS/GridTrackSize.cpp
+    CSS/Interpolation.cpp
     CSS/Length.cpp
     CSS/LengthBox.cpp
     CSS/MediaList.cpp
@@ -99,6 +100,7 @@ set(SOURCES
     CSS/SelectorEngine.cpp
     CSS/Serialize.cpp
     CSS/Size.cpp
+    CSS/Sizing.cpp
     CSS/StyleComputer.cpp
     CSS/StyleInvalidation.cpp
     CSS/StyleProperties.cpp
@@ -111,7 +113,6 @@ set(SOURCES
     CSS/StyleValues/BackgroundSizeStyleValue.cpp
     CSS/StyleValues/BasicShapeStyleValue.cpp
     CSS/StyleValues/BorderRadiusStyleValue.cpp
-    CSS/StyleValues/CalculatedStyleValue.cpp
     CSS/StyleValues/ConicGradientStyleValue.cpp
     CSS/StyleValues/ContentStyleValue.cpp
     CSS/StyleValues/CounterDefinitionsStyleValue.cpp
@@ -120,6 +121,7 @@ set(SOURCES
     CSS/StyleValues/CSSHSL.cpp
     CSS/StyleValues/CSSHWB.cpp
     CSS/StyleValues/CSSKeywordValue.cpp
+    CSS/StyleValues/CSSMathValue.cpp
     CSS/StyleValues/CSSOKLab.cpp
     CSS/StyleValues/CSSOKLCH.cpp
     CSS/StyleValues/CSSRGB.cpp
@@ -446,6 +448,7 @@ set(SOURCES
     HTML/Scripting/SerializedEnvironmentSettingsObject.cpp
     HTML/SelectedFile.cpp
     HTML/SelectItem.cpp
+    HTML/ServiceWorker.cpp
     HTML/ServiceWorkerContainer.cpp
     HTML/ServiceWorkerRegistration.cpp
     HTML/SessionHistoryEntry.cpp
@@ -459,6 +462,8 @@ set(SOURCES
     HTML/TagNames.cpp
     HTML/TextMetrics.cpp
     HTML/TextTrack.cpp
+    HTML/TextTrackCue.cpp
+    HTML/TextTrackCueList.cpp
     HTML/TextTrackList.cpp
     HTML/Timer.cpp
     HTML/TimeRanges.cpp
@@ -629,6 +634,7 @@ set(SOURCES
     SecureContexts/AbstractOperations.cpp
     SRI/SRI.cpp
     StorageAPI/NavigatorStorage.cpp
+    StorageAPI/StorageKey.cpp
     StorageAPI/StorageManager.cpp
     Streams/AbstractOperations.cpp
     Streams/ByteLengthQueuingStrategy.cpp
@@ -728,6 +734,7 @@ set(SOURCES
     WebDriver/Client.cpp
     WebDriver/Contexts.cpp
     WebDriver/ElementLocationStrategies.cpp
+    WebDriver/ElementReference.cpp
     WebDriver/Error.cpp
     WebDriver/ExecuteScript.cpp
     WebDriver/Response.cpp
@@ -748,6 +755,8 @@ set(SOURCES
     WebIDL/Promise.cpp
     WebIDL/Tracing.cpp
     WebSockets/WebSocket.cpp
+    WebVTT/VTTCue.cpp
+    WebVTT/VTTRegion.cpp
     XHR/EventNames.cpp
     XHR/FormData.cpp
     XHR/FormDataIterator.cpp
@@ -793,7 +802,7 @@ set(GENERATED_SOURCES
 
 serenity_lib(LibWeb web)
 
-target_link_libraries(LibWeb PRIVATE LibCore LibCrypto LibJS LibHTTP LibGfx LibIPC LibRegex LibSyntax LibTextCodec LibUnicode LibAudio LibMedia LibWasm LibXML LibIDL LibURL LibTLS LibRequests skia)
+target_link_libraries(LibWeb PRIVATE LibCore LibCrypto LibJS LibHTTP LibGfx LibIPC LibRegex LibSyntax LibTextCodec LibUnicode LibMedia LibWasm LibXML LibIDL LibURL LibTLS LibRequests skia)
 
 generate_js_bindings(LibWeb)
 
