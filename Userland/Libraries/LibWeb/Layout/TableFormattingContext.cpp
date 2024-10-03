@@ -1039,7 +1039,8 @@ void TableFormattingContext::position_row_boxes()
         for (auto& column : m_columns) {
             row_width += column.used_width;
         }
-        row_width += (m_columns.size() - 1) * border_spacing_horizontal();
+        if (m_columns.size() >= 2)
+            row_width += (m_columns.size() - 1) * border_spacing_horizontal();
 
         row_state.set_content_height(row.final_height);
         row_state.set_content_width(row_width);
@@ -1065,7 +1066,8 @@ void TableFormattingContext::position_row_boxes()
             row_group_width = max(row_group_width, row_state.border_box_width());
             num_rows += 1;
         });
-        row_group_height += (num_rows - 1) * border_spacing_vertical();
+        if (num_rows >= 2)
+            row_group_height += (num_rows - 1) * border_spacing_vertical();
 
         row_group_box_state.set_content_height(row_group_height);
         row_group_box_state.set_content_width(row_group_width);
