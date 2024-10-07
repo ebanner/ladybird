@@ -123,8 +123,10 @@ static void dfs_layout_tree(Painting::PaintableBox const& node, int indent)
     if (node.has_scrollable_overflow()) {
         auto scrollable_overflow_rect = node.scrollable_overflow_rect().value();
         dbgln("{:>{}}{} -> overflow: {}, {}, [{},{}]", "", indent, box.debug_description(), scrollable_overflow_rect.x(), scrollable_overflow_rect.y(), scrollable_overflow_rect.width(), scrollable_overflow_rect.height());
-    } else
-        dbgln("{:>{}}{}", "", indent, box.debug_description());
+    } else {
+        auto absolute_border_box_rect = node.absolute_border_box_rect();
+        dbgln("{:>{}}{}:{}, {}, [{},{}] ", "", indent, box.debug_description(), absolute_border_box_rect.x(), absolute_border_box_rect.y(), absolute_border_box_rect.width(), absolute_border_box_rect.height());
+    }
 
     node.for_each_child_of_type<Painting::PaintableBox>([&indent](Painting::PaintableBox const& child) {
         dfs_layout_tree(child, indent + 2);
