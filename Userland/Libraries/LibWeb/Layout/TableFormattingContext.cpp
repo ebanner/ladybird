@@ -1030,7 +1030,7 @@ void TableFormattingContext::position_row_boxes()
 {
     auto const& table_state = m_state.get(table_box());
 
-    CSSPixels row_top_offset = table_state.offset.y() + table_state.padding_top + border_spacing_vertical();
+    CSSPixels row_top_offset = table_state.offset.y() + border_spacing_vertical();
     CSSPixels row_left_offset = table_state.border_left + table_state.padding_left + border_spacing_horizontal();
     for (size_t y = 0; y < m_rows.size(); y++) {
         auto& row = m_rows[y];
@@ -1049,7 +1049,7 @@ void TableFormattingContext::position_row_boxes()
         row_top_offset += row_state.content_height() + border_spacing_vertical();
     }
 
-    CSSPixels row_group_top_offset = table_state.offset.y() + table_state.padding_top + border_spacing_vertical();
+    CSSPixels row_group_top_offset = table_state.offset.y() + border_spacing_vertical();
     CSSPixels row_group_left_offset = table_state.border_left + table_state.padding_left + border_spacing_horizontal();
     TableGrid::for_each_child_box_matching(table_box(), TableGrid::is_table_row_group, [&](auto& row_group_box) {
         CSSPixels row_group_height = 0;
