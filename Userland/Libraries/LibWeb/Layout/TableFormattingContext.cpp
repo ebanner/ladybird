@@ -1072,7 +1072,7 @@ void TableFormattingContext::position_row_boxes()
         row_group_box_state.set_content_height(row_group_height);
         row_group_box_state.set_content_width(row_group_width);
 
-        row_group_top_offset += row_group_height + border_spacing_vertical();
+        row_group_top_offset += row_group_height + (num_rows > 0 ? border_spacing_vertical() : 0);
     });
 
     auto total_content_height = max(row_top_offset, row_group_top_offset) - table_state.offset.y() - table_state.padding_top;
