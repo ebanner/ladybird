@@ -204,9 +204,10 @@ static CSSPixelRect measure_scrollable_overflow(Box const& box, int indent = 0)
             content_overflow_rect = content_overflow_rect.united(child_border_box);
 
             if (scrollable_overflow_rect != scrollable_overflow_rect_copy) {
-                dbgln_if(DUMP_SCROLLABLE_OVERFLOW_CHANGES, "{:>{}}{}: +++CHILD BORDER BOX: {}: {}, {}, [{},{}]", "", indent, box.debug_description(), child.debug_description(), child_border_box.x(), child_border_box.y(), child_border_box.width(), child_border_box.height());
-                dbgln_if(DUMP_SCROLLABLE_OVERFLOW_CHANGES, "{:>{}}{}: {}, {}, [{},{}]", "", indent, box.debug_description(), scrollable_overflow_rect_copy.x(), scrollable_overflow_rect_copy.y(), scrollable_overflow_rect_copy.width(), scrollable_overflow_rect_copy.height());
-                dbgln_if(DUMP_SCROLLABLE_OVERFLOW_CHANGES, "{:>{}}{}: {}, {}, [{},{}]", "", indent, box.debug_description(), scrollable_overflow_rect.x(), scrollable_overflow_rect.y(), scrollable_overflow_rect.width(), scrollable_overflow_rect.height());
+                dbgln_if(DUMP_SCROLLABLE_OVERFLOW_CHANGES, "{:>{}}{}:   {}, {}, [{},{}]", "", indent, box.debug_description(), scrollable_overflow_rect_copy.x(), scrollable_overflow_rect_copy.y(), scrollable_overflow_rect_copy.width(), scrollable_overflow_rect_copy.height());
+                dbgln_if(DUMP_SCROLLABLE_OVERFLOW_CHANGES, "{:>{}}{}: + {}, {}, [{},{}] -> {}", "", indent, box.debug_description(), child_border_box.x(), child_border_box.y(), child_border_box.width(), child_border_box.height(), child.debug_description());
+                dbgln_if(DUMP_SCROLLABLE_OVERFLOW_CHANGES, "{:>{}}{}: = {}, {}, [{},{}]", "", indent, box.debug_description(), scrollable_overflow_rect.x(), scrollable_overflow_rect.y(), scrollable_overflow_rect.width(), scrollable_overflow_rect.height());
+                dbgln();
             }
 
             if (DUMP_CHILD_BORDER_BOX) {
@@ -228,9 +229,10 @@ static CSSPixelRect measure_scrollable_overflow(Box const& box, int indent = 0)
                     scrollable_overflow_rect.unite_vertically(child_scrollable_overflow);
                 }
                 if (scrollable_overflow_rect != scrollable_overflow_rect_copy) {
-                    dbgln_if(DUMP_SCROLLABLE_OVERFLOW_CHANGES, "{:>{}}{}: +++CHILD SCROLLABLE OVERFLOW: {}: {}, {}, [{},{}]", "", indent, box.debug_description(), child.debug_description(), child_scrollable_overflow.x(), child_scrollable_overflow.y(), child_scrollable_overflow.width(), child_scrollable_overflow.height());
-                    dbgln_if(DUMP_SCROLLABLE_OVERFLOW_CHANGES, "{:>{}}{}: {}, {}, [{},{}]", "", indent, box.debug_description(), scrollable_overflow_rect_copy.x(), scrollable_overflow_rect_copy.y(), scrollable_overflow_rect_copy.width(), scrollable_overflow_rect_copy.height());
-                    dbgln_if(DUMP_SCROLLABLE_OVERFLOW_CHANGES, "{:>{}}{}: {}, {}, [{},{}]", "", indent, box.debug_description(), scrollable_overflow_rect.x(), scrollable_overflow_rect.y(), scrollable_overflow_rect.width(), scrollable_overflow_rect.height());
+                    dbgln_if(DUMP_SCROLLABLE_OVERFLOW_CHANGES, "{:>{}}{}:   {}, {}, [{},{}]", "", indent, box.debug_description(), scrollable_overflow_rect_copy.x(), scrollable_overflow_rect_copy.y(), scrollable_overflow_rect_copy.width(), scrollable_overflow_rect_copy.height());
+                    dbgln_if(DUMP_SCROLLABLE_OVERFLOW_CHANGES, "{:>{}}{}: + {}, {}, [{},{}] -> {}", "", indent, box.debug_description(), child_scrollable_overflow.x(), child_scrollable_overflow.y(), child_scrollable_overflow.width(), child_scrollable_overflow.height(), child.debug_description());
+                    dbgln_if(DUMP_SCROLLABLE_OVERFLOW_CHANGES, "{:>{}}{}: = {}, {}, [{},{}]", "", indent, box.debug_description(), scrollable_overflow_rect.x(), scrollable_overflow_rect.y(), scrollable_overflow_rect.width(), scrollable_overflow_rect.height());
+                    dbgln();
                 }
 
                 if (DUMP_CHILD_BORDER_BOX) {
