@@ -17,9 +17,9 @@
 #include <LibWeb/Painting/SVGSVGPaintable.h>
 #include <LibWeb/Painting/TextPaintable.h>
 
-#define DUMP_CONTAINING_BLOCK_TREE 0
+#define DUMP_CONTAINING_BLOCK_TREE 1
 #define DUMP_LAYOUT_TREE 0
-#define DUMP_SCROLLABLE_OVERFLOW_CHANGES 1
+#define DUMP_SCROLLABLE_OVERFLOW_CHANGES 0
 #define DUMP_CHILD_BORDER_BOX 0
 
 namespace Web::Layout {
