@@ -106,7 +106,7 @@ static void dfs_blocks(Painting::PaintableBox const& node, int indent)
 {
     auto& box = node.layout_box();
     if (box.containing_block()) {
-        dbgln("{:>{}}{} -CB-> {}", "", indent, box.containing_block()->debug_description(), box.debug_description());
+        dbgln("{:>{}}{} -CB-> {}", "", indent, box.debug_description(), box.containing_block()->debug_description());
     } else {
         dbgln("{:>{}}{} -CB-> {}", "", indent, nullptr, box.debug_description());
     }
