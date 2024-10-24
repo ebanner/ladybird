@@ -52,16 +52,9 @@ public:
     void clear_contained_abspos_children() { m_contained_abspos_children.clear(); }
     Vector<JS::NonnullGCPtr<Node>> const& contained_abspos_children() const { return m_contained_abspos_children; }
 
-    void initialize_contained_children()
-    {
-        m_contained_children = new Vector<Box const*>();
-    }
-
-    void add_contained_child(Box const* child)
-    {
-        m_contained_children->append(child);
-    }
-    Vector<Box const*>* contained_children() const { return m_contained_children; }
+    void add_contained_child(Box& child) { m_contained_children.append(&child); }
+    void clear_contained_children() { m_contained_children.clear(); }
+    Vector<Box*> contained_children() const { return m_contained_children; }
 
     virtual void visit_edges(Cell::Visitor&) override;
 
@@ -76,7 +69,7 @@ private:
     Optional<CSSPixels> m_natural_height;
     Optional<CSSPixelFraction> m_natural_aspect_ratio;
 
-    Vector<Box const*>* m_contained_children;
+    Vector<Box*> m_contained_children;
 
     Vector<JS::NonnullGCPtr<Node>> m_contained_abspos_children;
 };
