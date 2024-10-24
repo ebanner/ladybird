@@ -31,7 +31,7 @@ Box::~Box()
 void Box::visit_edges(Cell::Visitor& visitor)
 {
     Base::visit_edges(visitor);
-    visitor.visit(m_contained_abspos_children);
+    visitor.visit(m_contained_children);
 }
 
 JS::GCPtr<Painting::Paintable> Box::create_paintable() const
