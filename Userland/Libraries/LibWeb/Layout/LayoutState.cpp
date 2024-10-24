@@ -72,7 +72,7 @@ LayoutState::UsedValues const& LayoutState::get(NodeWithStyle const& node) const
 }
 
 // https://www.w3.org/TR/css-overflow-3/#scrollable-overflow
-static CSSPixelRect measure_scrollable_overflow(Box& box)
+static CSSPixelRect measure_scrollable_overflow(Box const& box)
 {
     if (!box.paintable_box())
         return {};
@@ -100,7 +100,7 @@ static CSSPixelRect measure_scrollable_overflow(Box& box)
     //   and whose border boxes are positioned not wholly in the negative scrollable overflow region,
     //   FIXME: accounting for transforms by projecting each box onto the plane of the element that establishes its 3D rendering context. [CSS3-TRANSFORMS]
     if (!box.children_are_inline()) {
-        for (auto* child : box.contained_children()) {
+        for (auto& child : box.contained_children()) {
             if (!child->paintable_box())
                 continue;
 
@@ -388,8 +388,7 @@ void LayoutState::commit(Box& root)
         if (!used_values.node().is_box())
             continue;
         auto const& box = static_cast<Layout::Box const&>(used_values.node());
-        auto& mutable_box = const_cast<Layout::Box&>(box);
-        measure_scrollable_overflow(mutable_box);
+        measure_scrollable_overflow(box);
 
         // The scroll offset can become invalid if the scrollable overflow rectangle has changed after layout.
         // For example, if the scroll container has been scrolled to the very end and is then resized to become larger
