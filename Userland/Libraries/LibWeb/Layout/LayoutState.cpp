@@ -101,7 +101,6 @@ static CSSPixelRect measure_scrollable_overflow(Box const& box)
     //   FIXME: accounting for transforms by projecting each box onto the plane of the element that establishes its 3D rendering context. [CSS3-TRANSFORMS]
     if (!box.children_are_inline()) {
         for (auto& child_node : box.contained_children()) {
-
             VERIFY(is<Box>(*child_node.ptr()));
             auto const* childp = static_cast<Box*>(child_node.ptr());
             auto const& child = *childp;

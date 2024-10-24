@@ -1170,7 +1170,6 @@ void Document::update_layout()
         child.clear_contained_children();
         return TraversalDecision::Continue;
     });
-
     m_layout_root->for_each_in_inclusive_subtree([&](auto& child) {
         if (!child.is_absolutely_positioned())
             return TraversalDecision::Continue;
@@ -1186,7 +1185,6 @@ void Document::update_layout()
             }
             VERIFY(closest_box_that_establishes_formatting_context);
             closest_box_that_establishes_formatting_context->add_contained_abspos_child(child);
-
             containing_block->add_contained_child(child);
         }
         return TraversalDecision::Continue;
