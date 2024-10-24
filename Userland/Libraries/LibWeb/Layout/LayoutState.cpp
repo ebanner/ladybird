@@ -100,11 +100,13 @@ static CSSPixelRect measure_scrollable_overflow(Box const& box)
     //   and whose border boxes are positioned not wholly in the negative scrollable overflow region,
     //   FIXME: accounting for transforms by projecting each box onto the plane of the element that establishes its 3D rendering context. [CSS3-TRANSFORMS]
     if (!box.children_are_inline()) {
-        for (auto& child : box.contained_children()) {
-            if (!child->paintable_box())
+        for (auto& child_ : box.contained_children()) {
+            auto& child = *child_;
+
+            if (!child.paintable_box())
                 continue;
 
-            auto child_border_box = child->paintable_box()->absolute_border_box_rect();
+            auto child_border_box = child.paintable_box()->absolute_border_box_rect();
 
             // NOTE: Here we check that the child is not wholly in the negative scrollable overflow region.
             if (child_border_box.bottom() < 0 || child_border_box.right() < 0)
@@ -117,11 +119,11 @@ static CSSPixelRect measure_scrollable_overflow(Box const& box)
             //   (including zero-area boxes and accounting for transforms as described above),
             //   provided they themselves have overflow: visible (i.e. do not themselves trap the overflow)
             //   and that scrollable overflow is not already clipped (e.g. by the clip property or the contain property).
-            if (is<Viewport>(box) || child->computed_values().overflow_x() == CSS::Overflow::Visible || child->computed_values().overflow_y() == CSS::Overflow::Visible) {
-                auto child_scrollable_overflow = measure_scrollable_overflow(*child);
-                if (is<Viewport>(box) || child->computed_values().overflow_x() == CSS::Overflow::Visible)
+            if (is<Viewport>(box) || child.computed_values().overflow_x() == CSS::Overflow::Visible || child.computed_values().overflow_y() == CSS::Overflow::Visible) {
+                auto child_scrollable_overflow = measure_scrollable_overflow(child);
+                if (is<Viewport>(box) || child.computed_values().overflow_x() == CSS::Overflow::Visible)
                     scrollable_overflow_rect.unite_horizontally(child_scrollable_overflow);
-                if (is<Viewport>(box) || child->computed_values().overflow_y() == CSS::Overflow::Visible)
+                if (is<Viewport>(box) || child.computed_values().overflow_y() == CSS::Overflow::Visible)
                     scrollable_overflow_rect.unite_vertically(child_scrollable_overflow);
             }
         }
