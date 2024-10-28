@@ -72,7 +72,7 @@ LayoutState::UsedValues const& LayoutState::get(NodeWithStyle const& node) const
 }
 
 // https://www.w3.org/TR/css-overflow-3/#scrollable-overflow
-static CSSPixelRect measure_scrollable_overflow(Box const& box, HashMap<Box const*, Vector<Box const*>> containing_blocks_map = {})
+static CSSPixelRect measure_scrollable_overflow_recursive(Box const& box, HashMap<Box const*, Vector<Box const*>> containing_blocks_map)
 {
     if (!box.paintable_box())
         return {};
@@ -100,30 +100,6 @@ static CSSPixelRect measure_scrollable_overflow(Box const& box, HashMap<Box cons
     //   and whose border boxes are positioned not wholly in the negative scrollable overflow region,
     //   FIXME: accounting for transforms by projecting each box onto the plane of the element that establishes its 3D rendering context. [CSS3-TRANSFORMS]
     if (!box.children_are_inline()) {
-        if (containing_blocks_map.is_empty()) {
-            NodeWithStyle const* ancestor = &box;
-            while (ancestor->parent()) {
-                ancestor = ancestor->parent();
-            }
-            Box const* root_box = static_cast<Box const*>(ancestor);
-            root_box->for_each_in_inclusive_subtree_of_type<Box>([&containing_blocks_map](auto& child) {
-                if (!child.paintable_box())
-                    return TraversalDecision::Continue;
-
-                // Make sure to add each node to the cache, even if it does not have any contained elements
-                if (!containing_blocks_map.contains(&child)) {
-                    containing_blocks_map.set(&child, {});
-                }
-
-                auto* containing_block = child.containing_block();
-                if (!containing_blocks_map.contains(containing_block)) {
-                    containing_blocks_map.set(containing_block, {});
-                }
-                containing_blocks_map.get(containing_block)->append(&child);
-                return TraversalDecision::Continue;
-            });
-        }
-
         for (auto& childp : *containing_blocks_map.get(&box)) {
             auto& child = *childp;
 
@@ -141,7 +117,7 @@ static CSSPixelRect measure_scrollable_overflow(Box const& box, HashMap<Box cons
             //   provided they themselves have overflow: visible (i.e. do not themselves trap the overflow)
             //   and that scrollable overflow is not already clipped (e.g. by the clip property or the contain property).
             if (is<Viewport>(box) || child.computed_values().overflow_x() == CSS::Overflow::Visible || child.computed_values().overflow_y() == CSS::Overflow::Visible) {
-                auto child_scrollable_overflow = measure_scrollable_overflow(child, containing_blocks_map);
+                auto child_scrollable_overflow = measure_scrollable_overflow_recursive(child, containing_blocks_map);
                 if (is<Viewport>(box) || child.computed_values().overflow_x() == CSS::Overflow::Visible)
                     scrollable_overflow_rect.unite_horizontally(child_scrollable_overflow);
                 if (is<Viewport>(box) || child.computed_values().overflow_y() == CSS::Overflow::Visible)
@@ -165,6 +141,30 @@ static CSSPixelRect measure_scrollable_overflow(Box const& box, HashMap<Box cons
     });
 
     return scrollable_overflow_rect;
+}
+
+static CSSPixelRect measure_scrollable_overflow(Box const& box)
+{
+    HashMap<Box const*, Vector<Box const*>> containing_blocks_map;
+
+    box.for_each_in_inclusive_subtree_of_type<Box>([&containing_blocks_map](auto& child) {
+        if (!child.paintable_box())
+            return TraversalDecision::Continue;
+
+        // Make sure to add each node to the cache, even if it does not have any contained elements
+        if (!containing_blocks_map.contains(&child)) {
+            containing_blocks_map.set(&child, {});
+        }
+
+        auto* containing_block = child.containing_block();
+        if (!containing_blocks_map.contains(containing_block)) {
+            containing_blocks_map.set(containing_block, {});
+        }
+        containing_blocks_map.get(containing_block)->append(&child);
+        return TraversalDecision::Continue;
+    });
+
+    return measure_scrollable_overflow_recursive(box, containing_blocks_map);
 }
 
 void LayoutState::resolve_relative_positions()
