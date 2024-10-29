@@ -195,10 +195,12 @@ static CSSPixelRect measure_scrollable_overflow(Box const& box, int indent = 0)
             if (child_border_box.bottom() < 0 || child_border_box.right() < 0)
                 return IterationDecision::Continue;
 
+            scrollable_overflow_rect_copy = scrollable_overflow_rect;
             scrollable_overflow_rect = scrollable_overflow_rect.united(child_border_box);
             content_overflow_rect = content_overflow_rect.united(child_border_box);
 
             if (scrollable_overflow_rect != scrollable_overflow_rect_copy) {
+                dbgln_if(DUMP_SCROLLABLE_OVERFLOW_CHANGES, "scrollable_overflow_rect = scrollable_overflow_rect.united(child_border_box)");
                 dbgln_if(DUMP_SCROLLABLE_OVERFLOW_CHANGES, "{:>{}}{}:   {}, {}, [{},{}]", "", indent, box.debug_description(), scrollable_overflow_rect_copy.x(), scrollable_overflow_rect_copy.y(), scrollable_overflow_rect_copy.width(), scrollable_overflow_rect_copy.height());
                 dbgln_if(DUMP_SCROLLABLE_OVERFLOW_CHANGES, "{:>{}}{}: + {}, {}, [{},{}] -> {}", "", indent, box.debug_description(), child_border_box.x(), child_border_box.y(), child_border_box.width(), child_border_box.height(), child.debug_description());
                 dbgln_if(DUMP_SCROLLABLE_OVERFLOW_CHANGES, "{:>{}}{}: = {}, {}, [{},{}]", "", indent, box.debug_description(), scrollable_overflow_rect.x(), scrollable_overflow_rect.y(), scrollable_overflow_rect.width(), scrollable_overflow_rect.height());
@@ -217,6 +219,7 @@ static CSSPixelRect measure_scrollable_overflow(Box const& box, int indent = 0)
             //   provided they themselves have overflow: visible (i.e. do not themselves trap the overflow)
             //   and that scrollable overflow is not already clipped (e.g. by the clip property or the contain property).
             if (is<Viewport>(box) || child.computed_values().overflow_x() == CSS::Overflow::Visible || child.computed_values().overflow_y() == CSS::Overflow::Visible) {
+                scrollable_overflow_rect_copy = scrollable_overflow_rect;
                 auto child_scrollable_overflow = measure_scrollable_overflow(child, indent + 2);
                 if (is<Viewport>(box) || child.computed_values().overflow_x() == CSS::Overflow::Visible)
                     scrollable_overflow_rect.unite_horizontally(child_scrollable_overflow);
@@ -224,6 +227,7 @@ static CSSPixelRect measure_scrollable_overflow(Box const& box, int indent = 0)
                     scrollable_overflow_rect.unite_vertically(child_scrollable_overflow);
                 }
                 if (scrollable_overflow_rect != scrollable_overflow_rect_copy) {
+                    dbgln_if(DUMP_SCROLLABLE_OVERFLOW_CHANGES, "scrollable_overflow_rect.unite_[horizontally|vertically](child_scrollable_overflow)");
                     dbgln_if(DUMP_SCROLLABLE_OVERFLOW_CHANGES, "{:>{}}{}:   {}, {}, [{},{}]", "", indent, box.debug_description(), scrollable_overflow_rect_copy.x(), scrollable_overflow_rect_copy.y(), scrollable_overflow_rect_copy.width(), scrollable_overflow_rect_copy.height());
                     dbgln_if(DUMP_SCROLLABLE_OVERFLOW_CHANGES, "{:>{}}{}: + {}, {}, [{},{}] -> {}", "", indent, box.debug_description(), child_scrollable_overflow.x(), child_scrollable_overflow.y(), child_scrollable_overflow.width(), child_scrollable_overflow.height(), child.debug_description());
                     dbgln_if(DUMP_SCROLLABLE_OVERFLOW_CHANGES, "{:>{}}{}: = {}, {}, [{},{}]", "", indent, box.debug_description(), scrollable_overflow_rect.x(), scrollable_overflow_rect.y(), scrollable_overflow_rect.width(), scrollable_overflow_rect.height());
