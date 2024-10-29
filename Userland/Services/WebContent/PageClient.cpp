@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, Andreas Kling <kling@serenityos.org>
+ * Copyright (c) 2020-2023, Andreas Kling <andreas@ladybird.org>
  * Copyright (c) 2021-2022, Linus Groh <linusg@serenityos.org>
  * Copyright (c) 2023, Andrew Kaster <akaster@serenityos.org>
  * Copyright (c) 2024, Sam Atkins <sam@ladybird.org>
@@ -52,17 +52,16 @@ PageClient::PageClient(PageHost& owner, u64 id)
     , m_backing_store_manager(*this)
 {
     setup_palette();
+
+    int refresh_interval = 1000 / 60; // FIXME: Account for the actual refresh rate of the display
+    m_paint_refresh_timer = Core::Timer::create_repeating(refresh_interval, [] {
+        Web::HTML::main_thread_event_loop().queue_task_to_update_the_rendering();
+    });
+
+    m_paint_refresh_timer->start();
 }
 
 PageClient::~PageClient() = default;
-
-void PageClient::schedule_repaint()
-{
-    if (m_paint_state != PaintState::Ready) {
-        m_paint_state = PaintState::PaintWhenReady;
-        return;
-    }
-}
 
 bool PageClient::is_ready_to_paint() const
 {
@@ -71,19 +70,16 @@ bool PageClient::is_ready_to_paint() const
 
 void PageClient::ready_to_paint()
 {
-    auto old_paint_state = exchange(m_paint_state, PaintState::Ready);
-
-    if (old_paint_state == PaintState::PaintWhenReady) {
-        // NOTE: Repainting always has to be scheduled from HTML event loop processing steps
-        //       to make sure style and layout are up-to-date.
-        Web::HTML::main_thread_event_loop().schedule();
-    }
+    m_paint_state = PaintState::Ready;
 }
 
 void PageClient::visit_edges(JS::Cell::Visitor& visitor)
 {
     Base::visit_edges(visitor);
     visitor.visit(m_page);
+
+    if (m_webdriver)
+        m_webdriver->visit_edges(visitor);
 }
 
 ConnectionFromClient& PageClient::client() const
@@ -196,8 +192,6 @@ void PageClient::process_screenshot_requests()
 
 void PageClient::paint_next_frame()
 {
-    process_screenshot_requests();
-
     auto back_store = m_backing_store_manager.back_store();
     if (!back_store)
         return;
@@ -366,9 +360,9 @@ void PageClient::page_did_finish_loading(URL::URL const& url)
     client().async_did_finish_loading(m_id, url);
 }
 
-void PageClient::page_did_finish_text_test()
+void PageClient::page_did_finish_text_test(String const& text)
 {
-    client().async_did_finish_text_test(m_id);
+    client().async_did_finish_text_test(m_id, text);
 }
 
 void PageClient::page_did_request_context_menu(Web::CSSPixelPoint content_position)
@@ -511,6 +505,11 @@ void PageClient::page_did_update_cookie(Web::Cookie::Cookie cookie)
     client().async_did_update_cookie(move(cookie));
 }
 
+void PageClient::page_did_expire_cookies_with_time_offset(AK::Duration offset)
+{
+    client().async_did_expire_cookies_with_time_offset(offset);
+}
+
 void PageClient::page_did_update_resource_count(i32 count_waiting)
 {
     client().async_did_update_resource_count(m_id, count_waiting);
@@ -613,17 +612,17 @@ void PageClient::inspector_did_load()
     client().async_inspector_did_load(m_id);
 }
 
-void PageClient::inspector_did_select_dom_node(i32 node_id, Optional<Web::CSS::Selector::PseudoElement::Type> const& pseudo_element)
+void PageClient::inspector_did_select_dom_node(Web::UniqueNodeID node_id, Optional<Web::CSS::Selector::PseudoElement::Type> const& pseudo_element)
 {
     client().async_inspector_did_select_dom_node(m_id, node_id, pseudo_element);
 }
 
-void PageClient::inspector_did_set_dom_node_text(i32 node_id, String const& text)
+void PageClient::inspector_did_set_dom_node_text(Web::UniqueNodeID node_id, String const& text)
 {
     client().async_inspector_did_set_dom_node_text(m_id, node_id, text);
 }
 
-void PageClient::inspector_did_set_dom_node_tag(i32 node_id, String const& tag)
+void PageClient::inspector_did_set_dom_node_tag(Web::UniqueNodeID node_id, String const& tag)
 {
     client().async_inspector_did_set_dom_node_tag(m_id, node_id, tag);
 }
@@ -643,17 +642,17 @@ static Vector<WebView::Attribute> named_node_map_to_vector(JS::NonnullGCPtr<Web:
     return attributes;
 }
 
-void PageClient::inspector_did_add_dom_node_attributes(i32 node_id, JS::NonnullGCPtr<Web::DOM::NamedNodeMap> attributes)
+void PageClient::inspector_did_add_dom_node_attributes(Web::UniqueNodeID node_id, JS::NonnullGCPtr<Web::DOM::NamedNodeMap> attributes)
 {
     client().async_inspector_did_add_dom_node_attributes(m_id, node_id, named_node_map_to_vector(attributes));
 }
 
-void PageClient::inspector_did_replace_dom_node_attribute(i32 node_id, size_t attribute_index, JS::NonnullGCPtr<Web::DOM::NamedNodeMap> replacement_attributes)
+void PageClient::inspector_did_replace_dom_node_attribute(Web::UniqueNodeID node_id, size_t attribute_index, JS::NonnullGCPtr<Web::DOM::NamedNodeMap> replacement_attributes)
 {
     client().async_inspector_did_replace_dom_node_attribute(m_id, node_id, attribute_index, named_node_map_to_vector(replacement_attributes));
 }
 
-void PageClient::inspector_did_request_dom_tree_context_menu(i32 node_id, Web::CSSPixelPoint position, String const& type, Optional<String> const& tag, Optional<size_t> const& attribute_index)
+void PageClient::inspector_did_request_dom_tree_context_menu(Web::UniqueNodeID node_id, Web::CSSPixelPoint position, String const& type, Optional<String> const& tag, Optional<size_t> const& attribute_index)
 {
     client().async_inspector_did_request_dom_tree_context_menu(m_id, node_id, page().css_to_device_point(position).to_type<int>(), type, tag, attribute_index);
 }
@@ -847,7 +846,7 @@ Web::DisplayListPlayerType PageClient::display_list_player_type() const
     }
 }
 
-void PageClient::queue_screenshot_task(Optional<i32> node_id)
+void PageClient::queue_screenshot_task(Optional<Web::UniqueNodeID> node_id)
 {
     m_screenshot_tasks.enqueue({ node_id });
     page().top_level_traversable()->set_needs_display();

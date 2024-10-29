@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, Andreas Kling <kling@serenityos.org>
+ * Copyright (c) 2021, Andreas Kling <andreas@ladybird.org>
  * Copyright (c) 2024, Jelle Raaijmakers <jelle@gmta.nl>
  *
  * SPDX-License-Identifier: BSD-2-Clause
@@ -98,6 +98,8 @@ public:
     // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#concept-form-reset-control
     virtual void reset_algorithm() {};
 
+    virtual void clear_algorithm();
+
     String form_action() const;
     WebIDL::ExceptionOr<void> set_form_action(String const&);
 
@@ -149,6 +151,7 @@ public:
     // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#dom-textarea/input-selectiondirection
     Optional<String> selection_direction() const;
     void set_selection_direction(Optional<String> direction);
+    WebIDL::ExceptionOr<void> set_selection_direction_binding(Optional<String> direction);
     SelectionDirection selection_direction_state() const { return m_selection_direction; }
 
     // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#dom-textarea/input-setrangetext
@@ -161,6 +164,10 @@ public:
     // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#dom-textarea/input-setselectionrange
     WebIDL::ExceptionOr<void> set_selection_range(Optional<WebIDL::UnsignedLong> start, Optional<WebIDL::UnsignedLong> end, Optional<String> direction);
 
+    // https://w3c.github.io/selection-api/#dfn-has-scheduled-selectionchange-event
+    bool has_scheduled_selectionchange_event() const { return m_has_scheduled_selectionchange_event; }
+    void set_scheduled_selectionchange_event(bool value) { m_has_scheduled_selectionchange_event = value; }
+
 protected:
     // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#concept-textarea/input-relevant-value
     void relevant_value_was_changed(JS::GCPtr<DOM::Text>);
@@ -172,6 +179,9 @@ private:
     WebIDL::UnsignedLong m_selection_start { 0 };
     WebIDL::UnsignedLong m_selection_end { 0 };
     SelectionDirection m_selection_direction { SelectionDirection::None };
+
+    // https://w3c.github.io/selection-api/#dfn-has-scheduled-selectionchange-event
+    bool m_has_scheduled_selectionchange_event { false };
 };
 
 }

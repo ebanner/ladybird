@@ -1,14 +1,14 @@
 /*
- * Copyright (c) 2022, Andreas Kling <kling@serenityos.org>
+ * Copyright (c) 2022, Andreas Kling <andreas@ladybird.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
 #pragma once
 
+#include <LibURL/Origin.h>
 #include <LibURL/URL.h>
 #include <LibWeb/HTML/CrossOrigin/OpenerPolicy.h>
-#include <LibWeb/HTML/Origin.h>
 
 namespace Web::HTML {
 
@@ -24,7 +24,7 @@ struct OpenerPolicyEnforcementResult {
     URL::URL url;
 
     // An origin origin.
-    Origin origin;
+    URL::Origin origin;
 
     // An opener policy.
     OpenerPolicy opener_policy;

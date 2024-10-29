@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, Andreas Kling <kling@serenityos.org>
+ * Copyright (c) 2022, Andreas Kling <andreas@ladybird.org>
  * Copyright (c) 2022, Matthew Costa <ucosty@gmail.com>
  * Copyright (c) 2024, Jamie Mansfield <jmansfield@cadixdev.org>
  *
@@ -321,8 +321,8 @@ Tab::Tab(BrowserWindow* window, RefPtr<WebView::WebContentClient> parent_client,
 
     QObject::connect(focus_location_editor_action, &QAction::triggered, this, &Tab::focus_location_editor);
 
-    view().on_received_source = [this](auto const& url, auto const& source) {
-        auto html = WebView::highlight_source(MUST(url.to_string()), source, Syntax::Language::HTML, WebView::HighlightOutputMode::FullDocument);
+    view().on_received_source = [this](auto const& url, auto const& base_url, auto const& source) {
+        auto html = WebView::highlight_source(url, base_url, source, Syntax::Language::HTML, WebView::HighlightOutputMode::FullDocument);
         m_window->new_tab_from_content(html, Web::HTML::ActivateTab::Yes);
     };
 
@@ -523,19 +523,13 @@ Tab::Tab(BrowserWindow* window, RefPtr<WebView::WebContentClient> parent_client,
         m_page_context_menu->exec(view().map_point_to_global_position(content_position));
     };
 
-    auto* open_link_action = new QAction("&Open", this);
-    open_link_action->setIcon(load_icon_from_uri("resource://icons/16x16/go-forward.png"sv));
-    QObject::connect(open_link_action, &QAction::triggered, this, [this]() {
-        open_link(m_link_context_menu_url);
-    });
-
-    auto* open_link_in_new_tab_action = new QAction("&Open in New &Tab", this);
+    auto* open_link_in_new_tab_action = new QAction("Open Link in New &Tab", this);
     open_link_in_new_tab_action->setIcon(load_icon_from_uri("resource://icons/16x16/new-tab.png"sv));
     QObject::connect(open_link_in_new_tab_action, &QAction::triggered, this, [this]() {
         open_link_in_new_tab(m_link_context_menu_url);
     });
 
-    m_link_context_menu_copy_url_action = new QAction("Copy &URL", this);
+    m_link_context_menu_copy_url_action = new QAction("Copy &Link Address", this);
     m_link_context_menu_copy_url_action->setIcon(load_icon_from_uri("resource://icons/16x16/edit-copy.png"sv));
     QObject::connect(m_link_context_menu_copy_url_action, &QAction::triggered, this, [this]() {
         copy_link_url(m_link_context_menu_url);
@@ -543,8 +537,6 @@ Tab::Tab(BrowserWindow* window, RefPtr<WebView::WebContentClient> parent_client,
 
     m_link_context_menu = new QMenu("Link context menu", this);
     m_link_context_menu->addAction(open_link_in_new_tab_action);
-    m_link_context_menu->addAction(open_link_action);
-    m_link_context_menu->addSeparator();
     m_link_context_menu->addAction(m_link_context_menu_copy_url_action);
     m_link_context_menu->addSeparator();
     m_link_context_menu->addAction(&m_window->inspect_dom_node_action());
@@ -560,7 +552,7 @@ Tab::Tab(BrowserWindow* window, RefPtr<WebView::WebContentClient> parent_client,
             m_link_context_menu_copy_url_action->setText("Copy &Phone Number");
             break;
         case WebView::URLType::Other:
-            m_link_context_menu_copy_url_action->setText("Copy &URL");
+            m_link_context_menu_copy_url_action->setText("Copy &Link Address");
             break;
         }
 

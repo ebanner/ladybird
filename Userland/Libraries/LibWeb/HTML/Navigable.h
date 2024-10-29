@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, Andreas Kling <kling@serenityos.org>
+ * Copyright (c) 2022, Andreas Kling <andreas@ladybird.org>
  * Copyright (c) 2023, Aliaksandr Kalenik <kalenik.aliaksandr@gmail.com>
  *
  * SPDX-License-Identifier: BSD-2-Clause
@@ -69,6 +69,7 @@ public:
 
     bool is_closing() const { return m_closing; }
     void set_closing(bool value) { m_closing = value; }
+    bool is_script_closable();
 
     void set_delaying_load_events(bool value);
     bool is_delaying_load_events() const { return m_delaying_the_load_event.has_value(); }
@@ -150,8 +151,8 @@ public:
 
     WebIDL::ExceptionOr<void> navigate_to_a_fragment(URL::URL const&, HistoryHandlingBehavior, UserNavigationInvolvement, Optional<SerializationRecord> navigation_api_state, String navigation_id);
 
-    WebIDL::ExceptionOr<JS::GCPtr<DOM::Document>> evaluate_javascript_url(URL::URL const&, Origin const& new_document_origin, String navigation_id);
-    WebIDL::ExceptionOr<void> navigate_to_a_javascript_url(URL::URL const&, HistoryHandlingBehavior, Origin const& initiator_origin, CSPNavigationType csp_navigation_type, String navigation_id);
+    WebIDL::ExceptionOr<JS::GCPtr<DOM::Document>> evaluate_javascript_url(URL::URL const&, URL::Origin const& new_document_origin, String navigation_id);
+    WebIDL::ExceptionOr<void> navigate_to_a_javascript_url(URL::URL const&, HistoryHandlingBehavior, URL::Origin const& initiator_origin, CSPNavigationType csp_navigation_type, String navigation_id);
 
     bool allowed_by_sandboxing_to_navigate(Navigable const& target, SourceSnapshotParams const&);
 

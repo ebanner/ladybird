@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2022, Andreas Kling <kling@serenityos.org>
+ * Copyright (c) 2018-2022, Andreas Kling <andreas@ladybird.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  */
@@ -59,16 +59,16 @@ bool url_matches_about_srcdoc(URL::URL const& url)
 }
 
 // https://html.spec.whatwg.org/multipage/document-sequences.html#determining-the-origin
-HTML::Origin determine_the_origin(Optional<URL::URL> const& url, SandboxingFlagSet sandbox_flags, Optional<HTML::Origin> source_origin)
+URL::Origin determine_the_origin(Optional<URL::URL> const& url, SandboxingFlagSet sandbox_flags, Optional<URL::Origin> source_origin)
 {
     // 1. If sandboxFlags has its sandboxed origin browsing context flag set, then return a new opaque origin.
     if (has_flag(sandbox_flags, SandboxingFlagSet::SandboxedOrigin)) {
-        return HTML::Origin {};
+        return URL::Origin {};
     }
 
     // 2. If url is null, then return a new opaque origin.
     if (!url.has_value()) {
-        return HTML::Origin {};
+        return URL::Origin {};
     }
 
     // 3. If url is about:srcdoc, then:
@@ -85,7 +85,7 @@ HTML::Origin determine_the_origin(Optional<URL::URL> const& url, SandboxingFlagS
         return source_origin.release_value();
 
     // 5. Return url's origin.
-    return DOMURL::url_origin(*url);
+    return url->origin();
 }
 
 // https://html.spec.whatwg.org/multipage/document-sequences.html#creating-a-new-auxiliary-browsing-context
@@ -144,7 +144,7 @@ WebIDL::ExceptionOr<BrowsingContext::BrowsingContextAndDocument> BrowsingContext
     [[maybe_unused]] auto unsafe_context_creation_time = HighResolutionTime::unsafe_shared_current_time();
 
     // 3. Let creatorOrigin be null.
-    Optional<Origin> creator_origin = {};
+    Optional<URL::Origin> creator_origin = {};
 
     // 4. Let creatorBaseURL be null.
     Optional<URL::URL> creator_base_url = {};
@@ -507,7 +507,7 @@ SandboxingFlagSet determine_the_creation_sandboxing_flags(BrowsingContext const&
 bool BrowsingContext::has_navigable_been_destroyed() const
 {
     auto navigable = active_document()->navigable();
-    return navigable && navigable->has_been_destroyed();
+    return !navigable || navigable->has_been_destroyed();
 }
 
 }

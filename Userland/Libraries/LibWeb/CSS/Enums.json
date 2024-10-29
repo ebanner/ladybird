@@ -1,7 +1,9 @@
 {
   "align-content": [
     "normal",
+    "start",
     "flex-start",
+    "end",
     "flex-end",
     "center",
     "space-between",
@@ -415,6 +417,11 @@
     "thin",
     "none"
   ],
+  "stroke-linecap": [
+    "butt",
+    "square",
+    "round"
+  ],
   "text-align": [
     "center",
     "justify",
@@ -462,6 +469,14 @@
     "fill-box",
     "stroke-box",
     "view-box "
+  ],
+  "unicode-bidi": [
+    "bidi-override",
+    "embed",
+    "isolate",
+    "isolate-override",
+    "normal",
+    "plaintext"
   ],
   "vertical-align": [
     "baseline",

@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2022, Florent Castelli <florent.castelli@gmail.com>
  * Copyright (c) 2022, Linus Groh <linusg@serenityos.org>
- * Copyright (c) 2022-2024, Tim Flynn <trflynn89@serenityos.org>
+ * Copyright (c) 2022-2024, Tim Flynn <trflynn89@ladybird.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  */
@@ -33,6 +33,8 @@ class WebDriverConnection final
 public:
     static ErrorOr<NonnullRefPtr<WebDriverConnection>> connect(Web::PageClient& page_client, ByteString const& webdriver_ipc_path);
     virtual ~WebDriverConnection() = default;
+
+    void visit_edges(JS::Cell::Visitor&);
 
 private:
     WebDriverConnection(NonnullOwnPtr<Core::LocalSocket> socket, Web::PageClient& page_client);
@@ -104,9 +106,12 @@ private:
     virtual Messages::WebDriverClient::PrintPageResponse print_page(JsonValue const& payload) override;
     virtual Messages::WebDriverClient::EnsureTopLevelBrowsingContextIsOpenResponse ensure_top_level_browsing_context_is_open() override;
 
+    void set_current_browsing_context(Web::HTML::BrowsingContext&);
     Web::HTML::BrowsingContext& current_browsing_context() { return *m_current_browsing_context; }
-    JS::GCPtr<Web::HTML::BrowsingContext> current_parent_browsing_context();
-    JS::GCPtr<Web::HTML::BrowsingContext> current_top_level_browsing_context();
+    JS::GCPtr<Web::HTML::BrowsingContext> current_parent_browsing_context() { return m_current_parent_browsing_context; }
+
+    void set_current_top_level_browsing_context(Web::HTML::BrowsingContext&);
+    JS::GCPtr<Web::HTML::BrowsingContext> current_top_level_browsing_context() { return m_current_top_level_browsing_context; }
 
     ErrorOr<void, Web::WebDriver::Error> ensure_current_browsing_context_is_open();
     ErrorOr<void, Web::WebDriver::Error> ensure_current_top_level_browsing_context_is_open();
@@ -121,7 +126,7 @@ private:
     Gfx::IntPoint calculate_absolute_position_of_element(JS::NonnullGCPtr<Web::Geometry::DOMRect> rect);
     Gfx::IntRect calculate_absolute_rect_of_element(Web::DOM::Element const& element);
 
-    using StartNodeGetter = Function<ErrorOr<Web::DOM::ParentNode*, Web::WebDriver::Error>()>;
+    using StartNodeGetter = Function<ErrorOr<JS::NonnullGCPtr<Web::DOM::ParentNode>, Web::WebDriver::Error>()>;
     ErrorOr<JsonArray, Web::WebDriver::Error> find(StartNodeGetter&& start_node_getter, Web::WebDriver::LocationStrategy using_, StringView value);
 
     struct ScriptArguments {
@@ -144,7 +149,15 @@ private:
     Web::WebDriver::TimeoutsConfiguration m_timeouts_configuration;
 
     // https://w3c.github.io/webdriver/#dfn-current-browsing-context
-    JS::Handle<Web::HTML::BrowsingContext> m_current_browsing_context;
+    JS::GCPtr<Web::HTML::BrowsingContext> m_current_browsing_context;
+
+    // https://w3c.github.io/webdriver/#dfn-current-parent-browsing-context
+    JS::GCPtr<Web::HTML::BrowsingContext> m_current_parent_browsing_context;
+
+    // https://w3c.github.io/webdriver/#dfn-current-top-level-browsing-context
+    JS::GCPtr<Web::HTML::BrowsingContext> m_current_top_level_browsing_context;
+
+    JS::GCPtr<JS::Cell> m_action_executor;
 };
 
 }

@@ -29,13 +29,10 @@ if (ENABLE_QT)
     qt_add_executable(WebWorker
             ../Qt/EventLoopImplementationQt.cpp
             ../Qt/EventLoopImplementationQtEventTarget.cpp
-            ../Qt/RequestManagerQt.cpp
             ../Qt/StringUtils.cpp
-            ../Qt/WebSocketQt.cpp
-            ../Qt/WebSocketImplQt.cpp
             main.cpp
     )
-    target_link_libraries(WebWorker PRIVATE Qt::Core Qt::Network)
+    target_link_libraries(WebWorker PRIVATE Qt::Core)
     target_link_libraries(WebWorker PRIVATE webworkerservice LibWebSocket)
     target_compile_definitions(WebWorker PRIVATE HAVE_QT=1)
 

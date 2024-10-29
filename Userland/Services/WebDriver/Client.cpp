@@ -3,7 +3,7 @@
  * Copyright (c) 2022, Sam Atkins <atkinssj@serenityos.org>
  * Copyright (c) 2022, Tobias Christiansen <tobyase@serenityos.org>
  * Copyright (c) 2022, Linus Groh <linusg@serenityos.org>
- * Copyright (c) 2022-2023, Tim Flynn <trflynn89@serenityos.org>
+ * Copyright (c) 2022-2024, Tim Flynn <trflynn89@ladybird.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  */
@@ -188,7 +188,7 @@ Web::WebDriver::Response Client::delete_session(Web::WebDriver::Parameters param
     dbgln_if(WEBDRIVER_DEBUG, "Handling DELETE /session/<session_id>");
 
     // 1. If the current session is an active session, try to close the session.
-    if (auto session = find_session_with_id(parameters[0]); !session.is_error())
+    if (auto session = find_session_with_id(parameters[0], AllowInvalidWindowHandle::Yes); !session.is_error())
         close_session(session.value()->session_id());
 
     // 2. Return success with data null.
@@ -588,7 +588,7 @@ Web::WebDriver::Response Client::element_click(Web::WebDriver::Parameters parame
 {
     dbgln_if(WEBDRIVER_DEBUG, "Handling POST /session/<session_id>/element/<element_id>/click");
     auto session = TRY(find_session_with_id(parameters[0]));
-    return session->web_content_connection().element_click(move(parameters[1]));
+    return session->element_click(move(parameters[1]));
 }
 
 // 12.5.2 Element Clear, https://w3c.github.io/webdriver/#dfn-element-clear
@@ -606,7 +606,7 @@ Web::WebDriver::Response Client::element_send_keys(Web::WebDriver::Parameters pa
 {
     dbgln_if(WEBDRIVER_DEBUG, "Handling POST /session/<session_id>/element/<element_id>/value");
     auto session = TRY(find_session_with_id(parameters[0]));
-    return session->web_content_connection().element_send_keys(move(parameters[1]), move(payload));
+    return session->element_send_keys(move(parameters[1]), move(payload));
 }
 
 // 13.1 Get Page Source, https://w3c.github.io/webdriver/#dfn-get-page-source
@@ -687,7 +687,7 @@ Web::WebDriver::Response Client::perform_actions(Web::WebDriver::Parameters para
 {
     dbgln_if(WEBDRIVER_DEBUG, "Handling POST /session/<session_id>/actions");
     auto session = TRY(find_session_with_id(parameters[0]));
-    return session->web_content_connection().perform_actions(move(payload));
+    return session->perform_actions(move(payload));
 }
 
 // 15.8 Release Actions, https://w3c.github.io/webdriver/#release-actions

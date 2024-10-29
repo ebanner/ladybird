@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2022, Andreas Kling <kling@serenityos.org>
+ * Copyright (c) 2018-2022, Andreas Kling <andreas@ladybird.org>
  * Copyright (c) 2022, Adam Hodgen <ant1441@gmail.com>
  * Copyright (c) 2023, Bastiaan van der Plaat <bastiaan.v.d.plaat@gmail.com>
  * Copyright (c) 2024, Jelle Raaijmakers <jelle@gmta.nl>
@@ -105,7 +105,11 @@ public:
 
     void did_pick_color(Optional<Color> picked_color, ColorPickerUpdateState state);
 
-    void did_select_files(Span<SelectedFile> selected_files);
+    enum class MultipleHandling {
+        Replace,
+        Append,
+    };
+    void did_select_files(Span<SelectedFile> selected_files, MultipleHandling = MultipleHandling::Replace);
 
     JS::GCPtr<FileAPI::FileList> files();
     void set_files(JS::GCPtr<FileAPI::FileList>);
@@ -175,6 +179,7 @@ public:
     bool is_single_line() const;
 
     virtual void reset_algorithm() override;
+    virtual void clear_algorithm() override;
 
     virtual void form_associated_element_was_inserted() override;
     virtual void form_associated_element_was_removed(DOM::Node*) override;
@@ -204,9 +209,12 @@ public:
     bool step_up_or_down_applies() const;
     bool select_applies() const;
     bool selection_or_range_applies() const;
+    bool selection_direction_applies() const;
     bool has_selectable_text() const;
 
     static bool selection_or_range_applies_for_type_state(TypeAttributeState);
+
+    Optional<String> selection_direction_binding() { return selection_direction(); }
 
 protected:
     void selection_was_changed(size_t selection_start, size_t selection_end) override;
@@ -215,6 +223,8 @@ private:
     HTMLInputElement(DOM::Document&, DOM::QualifiedName);
 
     void type_attribute_changed(TypeAttributeState old_state, TypeAttributeState new_state);
+
+    virtual void apply_presentational_hints(CSS::StyleProperties&) const override;
 
     // ^DOM::Node
     virtual bool is_html_input_element() const final { return true; }

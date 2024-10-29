@@ -1,7 +1,8 @@
 /*
  * Copyright (c) 2020, the SerenityOS developers.
  * Copyright (c) 2022, Luke Wilde <lukew@serenityos.org>
- * Copyright (c) 2022-2023, Andreas Kling <kling@serenityos.org>
+ * Copyright (c) 2022-2023, Andreas Kling <andreas@ladybird.org>
+ * Copyright (c) 2024, Jelle Raaijmakers <jelle@ladybird.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  */
@@ -21,10 +22,11 @@
 #include <LibWeb/Geometry/DOMRect.h>
 #include <LibWeb/Geometry/DOMRectList.h>
 #include <LibWeb/HTML/HTMLHtmlElement.h>
+#include <LibWeb/HTML/HTMLInputElement.h>
+#include <LibWeb/HTML/HTMLTextAreaElement.h>
 #include <LibWeb/HTML/Window.h>
 #include <LibWeb/Layout/Viewport.h>
 #include <LibWeb/Namespace.h>
-#include <LibWeb/Painting/InlinePaintable.h>
 #include <LibWeb/Painting/ViewportPaintable.h>
 
 namespace Web::DOM {
@@ -96,28 +98,68 @@ void Range::set_associated_selection(Badge<Selection::Selection>, JS::GCPtr<Sele
 
 void Range::update_associated_selection()
 {
-    if (auto* viewport = m_start_container->document().paintable()) {
+    auto& document = m_start_container->document();
+    if (auto* viewport = document.paintable()) {
         viewport->recompute_selection_states(*this);
         viewport->update_selection();
         viewport->set_needs_display();
     }
 
-    if (!m_associated_selection)
+    // https://w3c.github.io/selection-api/#selectionchange-event
+    // When the selection is dissociated with its range, associated with a new range, or the
+    // associated range's boundary point is mutated either by the user or the content script, the
+    // user agent must schedule a selectionchange event on document.
+    schedule_a_selectionchange_event(document);
+
+    // When an input or textarea element provide a text selection and its selection changes (in
+    // either extent or direction), the user agent must schedule a selectionchange event on the
+    // element.
+    if (m_start_container == m_end_container) {
+        if (is<HTML::HTMLInputElement>(*m_start_container))
+            schedule_a_selectionchange_event(verify_cast<HTML::HTMLInputElement>(*m_start_container));
+        if (is<HTML::HTMLTextAreaElement>(*m_start_container))
+            schedule_a_selectionchange_event(verify_cast<HTML::HTMLTextAreaElement>(*m_start_container));
+    }
+}
+
+// https://w3c.github.io/selection-api/#scheduling-selectionhange-event
+template<SelectionChangeTarget T>
+void Range::schedule_a_selectionchange_event(T& target)
+{
+    // 1. If target's has scheduled selectionchange event is true, abort these steps.
+    if (target.has_scheduled_selectionchange_event())
         return;
 
-    // https://w3c.github.io/selection-api/#selectionchange-event
-    // When the selection is dissociated with its range, associated with a new range or the associated range's boundary
-    // point is mutated either by the user or the content script, the user agent must queue a task on the user interaction
-    // task source to fire an event named selectionchange, which does not bubble and is not cancelable, at the document
-    // associated with the selection.
-    auto document = m_associated_selection->document();
-    queue_global_task(HTML::Task::Source::UserInteraction, relevant_global_object(*document), JS::create_heap_function(document->heap(), [document] {
-        EventInit event_init;
-        event_init.bubbles = false;
-        event_init.cancelable = false;
-        auto event = DOM::Event::create(document->realm(), HTML::EventNames::selectionchange, event_init);
-        document->dispatch_event(event);
+    // AD-HOC (https://github.com/w3c/selection-api/issues/338):
+    // Set target's has scheduled selectionchange event to true
+    target.set_scheduled_selectionchange_event(true);
+
+    // 2. Queue a task on the user interaction task source to fire a selectionchange event on
+    //    target.
+    JS::NonnullGCPtr<Document> document = m_start_container->document();
+    queue_global_task(HTML::Task::Source::UserInteraction, relevant_global_object(*document), JS::create_heap_function(document->heap(), [&] {
+        fire_a_selectionchange_event(target);
     }));
+}
+
+// https://w3c.github.io/selection-api/#firing-selectionhange-event
+template<SelectionChangeTarget T>
+void Range::fire_a_selectionchange_event(T& target)
+{
+    // 1. Set target's has scheduled selectionchange event to false.
+    target.set_scheduled_selectionchange_event(false);
+
+    // 2. If target is an element, fire an event named selectionchange, which bubbles and not
+    //    cancelable, at target.
+    // 3. Otherwise, if target is a document, fire an event named selectionchange, which does not
+    //    bubble and not cancelable, at target.
+    EventInit event_init;
+    event_init.bubbles = SameAs<T, Element>;
+    event_init.cancelable = false;
+
+    auto& realm = m_start_container->document().realm();
+    auto event = DOM::Event::create(realm, HTML::EventNames::selectionchange, event_init);
+    target.dispatch_event(event);
 }
 
 // https://dom.spec.whatwg.org/#concept-range-root
@@ -187,7 +229,7 @@ WebIDL::ExceptionOr<void> Range::set_start_or_end(Node& node, u32 offset, StartO
 
     // 1. If node is a doctype, then throw an "InvalidNodeTypeError" DOMException.
     if (is<DocumentType>(node))
-        return WebIDL::InvalidNodeTypeError::create(realm(), "Node cannot be a DocumentType."_fly_string);
+        return WebIDL::InvalidNodeTypeError::create(realm(), "Node cannot be a DocumentType."_string);
 
     // 2. If offset is greater than node’s length, then throw an "IndexSizeError" DOMException.
     if (offset > node.length())
@@ -247,7 +289,7 @@ WebIDL::ExceptionOr<void> Range::set_start_before(Node& node)
 
     // 2. If parent is null, then throw an "InvalidNodeTypeError" DOMException.
     if (!parent)
-        return WebIDL::InvalidNodeTypeError::create(realm(), "Given node has no parent."_fly_string);
+        return WebIDL::InvalidNodeTypeError::create(realm(), "Given node has no parent."_string);
 
     // 3. Set the start of this to boundary point (parent, node’s index).
     return set_start_or_end(*parent, node.index(), StartOrEnd::Start);
@@ -261,7 +303,7 @@ WebIDL::ExceptionOr<void> Range::set_start_after(Node& node)
 
     // 2. If parent is null, then throw an "InvalidNodeTypeError" DOMException.
     if (!parent)
-        return WebIDL::InvalidNodeTypeError::create(realm(), "Given node has no parent."_fly_string);
+        return WebIDL::InvalidNodeTypeError::create(realm(), "Given node has no parent."_string);
 
     // 3. Set the start of this to boundary point (parent, node’s index plus 1).
     return set_start_or_end(*parent, node.index() + 1, StartOrEnd::Start);
@@ -275,7 +317,7 @@ WebIDL::ExceptionOr<void> Range::set_end_before(Node& node)
 
     // 2. If parent is null, then throw an "InvalidNodeTypeError" DOMException.
     if (!parent)
-        return WebIDL::InvalidNodeTypeError::create(realm(), "Given node has no parent."_fly_string);
+        return WebIDL::InvalidNodeTypeError::create(realm(), "Given node has no parent."_string);
 
     // 3. Set the end of this to boundary point (parent, node’s index).
     return set_start_or_end(*parent, node.index(), StartOrEnd::End);
@@ -289,7 +331,7 @@ WebIDL::ExceptionOr<void> Range::set_end_after(Node& node)
 
     // 2. If parent is null, then throw an "InvalidNodeTypeError" DOMException.
     if (!parent)
-        return WebIDL::InvalidNodeTypeError::create(realm(), "Given node has no parent."_fly_string);
+        return WebIDL::InvalidNodeTypeError::create(realm(), "Given node has no parent."_string);
 
     // 3. Set the end of this to boundary point (parent, node’s index plus 1).
     return set_start_or_end(*parent, node.index() + 1, StartOrEnd::End);
@@ -309,7 +351,7 @@ WebIDL::ExceptionOr<WebIDL::Short> Range::compare_boundary_points(WebIDL::Unsign
 
     // 2. If this’s root is not the same as sourceRange’s root, then throw a "WrongDocumentError" DOMException.
     if (&root() != &source_range.root())
-        return WebIDL::WrongDocumentError::create(realm(), "This range is not in the same tree as the source range."_fly_string);
+        return WebIDL::WrongDocumentError::create(realm(), "This range is not in the same tree as the source range."_string);
 
     JS::GCPtr<Node> this_point_node;
     u32 this_point_offset = 0;
@@ -390,7 +432,7 @@ WebIDL::ExceptionOr<void> Range::select(Node& node)
 
     // 2. If parent is null, then throw an "InvalidNodeTypeError" DOMException.
     if (!parent)
-        return WebIDL::InvalidNodeTypeError::create(realm(), "Given node has no parent."_fly_string);
+        return WebIDL::InvalidNodeTypeError::create(realm(), "Given node has no parent."_string);
 
     // 3. Let index be node’s index.
     auto index = node.index();
@@ -433,7 +475,7 @@ WebIDL::ExceptionOr<void> Range::select_node_contents(Node& node)
 {
     // 1. If node is a doctype, throw an "InvalidNodeTypeError" DOMException.
     if (is<DocumentType>(node))
-        return WebIDL::InvalidNodeTypeError::create(realm(), "Node cannot be a DocumentType."_fly_string);
+        return WebIDL::InvalidNodeTypeError::create(realm(), "Node cannot be a DocumentType."_string);
 
     // 2. Let length be the length of node.
     auto length = node.length();
@@ -527,7 +569,7 @@ WebIDL::ExceptionOr<bool> Range::is_point_in_range(Node const& node, WebIDL::Uns
 
     // 2. If node is a doctype, then throw an "InvalidNodeTypeError" DOMException.
     if (is<DocumentType>(node))
-        return WebIDL::InvalidNodeTypeError::create(realm(), "Node cannot be a DocumentType."_fly_string);
+        return WebIDL::InvalidNodeTypeError::create(realm(), "Node cannot be a DocumentType."_string);
 
     // 3. If offset is greater than node’s length, then throw an "IndexSizeError" DOMException.
     if (offset > node.length())
@@ -548,11 +590,11 @@ WebIDL::ExceptionOr<WebIDL::Short> Range::compare_point(Node const& node, WebIDL
 {
     // 1. If node’s root is different from this’s root, then throw a "WrongDocumentError" DOMException.
     if (&node.root() != &root())
-        return WebIDL::WrongDocumentError::create(realm(), "Given node is not in the same document as the range."_fly_string);
+        return WebIDL::WrongDocumentError::create(realm(), "Given node is not in the same document as the range."_string);
 
     // 2. If node is a doctype, then throw an "InvalidNodeTypeError" DOMException.
     if (is<DocumentType>(node))
-        return WebIDL::InvalidNodeTypeError::create(realm(), "Node cannot be a DocumentType."_fly_string);
+        return WebIDL::InvalidNodeTypeError::create(realm(), "Node cannot be a DocumentType."_string);
 
     // 3. If offset is greater than node’s length, then throw an "IndexSizeError" DOMException.
     if (offset > node.length())
@@ -695,7 +737,7 @@ WebIDL::ExceptionOr<JS::NonnullGCPtr<DocumentFragment>> Range::extract()
     // 12. If any member of contained children is a doctype, then throw a "HierarchyRequestError" DOMException.
     for (auto const& child : contained_children) {
         if (is<DocumentType>(*child))
-            return WebIDL::HierarchyRequestError::create(realm(), "Contained child is a DocumentType"_fly_string);
+            return WebIDL::HierarchyRequestError::create(realm(), "Contained child is a DocumentType"_string);
     }
 
     JS::GCPtr<Node> new_node;
@@ -842,7 +884,7 @@ WebIDL::ExceptionOr<void> Range::insert(JS::NonnullGCPtr<Node> node)
     if ((is<ProcessingInstruction>(*m_start_container) || is<Comment>(*m_start_container))
         || (is<Text>(*m_start_container) && !m_start_container->parent_node())
         || m_start_container.ptr() == node.ptr()) {
-        return WebIDL::HierarchyRequestError::create(realm(), "Range has inappropriate start node for insertion"_fly_string);
+        return WebIDL::HierarchyRequestError::create(realm(), "Range has inappropriate start node for insertion"_string);
     }
 
     // 2. Let referenceNode be null.
@@ -913,11 +955,11 @@ WebIDL::ExceptionOr<void> Range::surround_contents(JS::NonnullGCPtr<Node> new_pa
     if (is<Text>(*end_non_text_node))
         end_non_text_node = end_non_text_node->parent_node();
     if (start_non_text_node != end_non_text_node)
-        return WebIDL::InvalidStateError::create(realm(), "Non-Text node is partially contained in range."_fly_string);
+        return WebIDL::InvalidStateError::create(realm(), "Non-Text node is partially contained in range."_string);
 
     // 2. If newParent is a Document, DocumentType, or DocumentFragment node, then throw an "InvalidNodeTypeError" DOMException.
     if (is<Document>(*new_parent) || is<DocumentType>(*new_parent) || is<DocumentFragment>(*new_parent))
-        return WebIDL::InvalidNodeTypeError::create(realm(), "Invalid parent node type"_fly_string);
+        return WebIDL::InvalidNodeTypeError::create(realm(), "Invalid parent node type"_string);
 
     // 3. Let fragment be the result of extracting this.
     auto fragment = TRY(extract());
@@ -1021,7 +1063,7 @@ WebIDL::ExceptionOr<JS::NonnullGCPtr<DocumentFragment>> Range::clone_the_content
     // 12. If any member of contained children is a doctype, then throw a "HierarchyRequestError" DOMException.
     for (auto const& child : contained_children) {
         if (is<DocumentType>(*child))
-            return WebIDL::HierarchyRequestError::create(realm(), "Contained child is a DocumentType"_fly_string);
+            return WebIDL::HierarchyRequestError::create(realm(), "Contained child is a DocumentType"_string);
     }
 
     // 13. If first partially contained child is a CharacterData node, then:

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2020, Andreas Kling <kling@serenityos.org>
+ * Copyright (c) 2018-2020, Andreas Kling <andreas@ladybird.org>
  * Copyright (c) 2021-2023, Sam Atkins <atkinssj@serenityos.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
@@ -35,6 +35,7 @@ static bool type_name_is_enum(StringView type_name)
         "integer"sv,
         "length"sv,
         "number"sv,
+        "opentype-tag"sv,
         "paint"sv,
         "percentage"sv,
         "position"sv,
@@ -235,6 +236,7 @@ enum class ValueType {
     Integer,
     Length,
     Number,
+    OpenTypeTag,
     Paint,
     Percentage,
     Position,
@@ -805,6 +807,8 @@ bool property_accepts_type(PropertyID property_id, ValueType value_type)
                     property_generator.appendln("        case ValueType::Length:");
                 } else if (type_name == "number") {
                     property_generator.appendln("        case ValueType::Number:");
+                } else if (type_name == "opentype-tag") {
+                    property_generator.appendln("        case ValueType::OpenTypeTag:");
                 } else if (type_name == "paint") {
                     property_generator.appendln("        case ValueType::Paint:");
                 } else if (type_name == "percentage") {

@@ -98,8 +98,8 @@ public:
     Optional<CSS::TextAlign> text_align() const;
     Optional<CSS::TextJustify> text_justify() const;
     Optional<CSS::TextOverflow> text_overflow() const;
-    CSS::Length border_spacing_horizontal() const;
-    CSS::Length border_spacing_vertical() const;
+    CSS::Length border_spacing_horizontal(Layout::Node const&) const;
+    CSS::Length border_spacing_vertical(Layout::Node const&) const;
     Optional<CSS::CaptionSide> caption_side() const;
     CSS::Clip clip() const;
     CSS::Display display() const;
@@ -113,6 +113,7 @@ public:
     ContentDataAndQuoteNestingLevel content(DOM::Element&, u32 initial_quote_nesting_level) const;
     Optional<CSS::ContentVisibility> content_visibility() const;
     Optional<CSS::Cursor> cursor() const;
+    Variant<LengthOrCalculated, NumberOrCalculated> tab_size() const;
     Optional<CSS::WhiteSpace> white_space() const;
     Optional<CSS::LineStyle> line_style(CSS::PropertyID) const;
     Optional<CSS::OutlineStyle> outline_style() const;
@@ -148,6 +149,8 @@ public:
     Variant<CSS::VerticalAlign, CSS::LengthPercentage> vertical_align() const;
     Optional<CSS::FontVariant> font_variant() const;
     Optional<FlyString> font_language_override() const;
+    Optional<HashMap<FlyString, IntegerOrCalculated>> font_feature_settings() const;
+    Optional<HashMap<FlyString, NumberOrCalculated>> font_variation_settings() const;
     CSS::GridTrackSizeList grid_auto_columns() const;
     CSS::GridTrackSizeList grid_auto_rows() const;
     CSS::GridTrackSizeList grid_template_columns() const;
@@ -163,6 +166,7 @@ public:
     CSS::ObjectPosition object_position() const;
     Optional<CSS::TableLayout> table_layout() const;
     Optional<CSS::Direction> direction() const;
+    Optional<CSS::UnicodeBidi> unicode_bidi() const;
 
     static Vector<CSS::Transformation> transformations_for_style_value(CSSStyleValue const& value);
     Vector<CSS::Transformation> transformations() const;
@@ -173,6 +177,7 @@ public:
     Color stop_color() const;
     float stop_opacity() const;
     float fill_opacity() const;
+    Optional<CSS::StrokeLinecap> stroke_linecap() const;
     float stroke_opacity() const;
     Optional<CSS::FillRule> fill_rule() const;
     Optional<CSS::ClipRule> clip_rule() const;

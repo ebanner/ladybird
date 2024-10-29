@@ -15,12 +15,14 @@ AudioBuffer
 AudioBufferSourceNode
 AudioContext
 AudioDestinationNode
+AudioListener
 AudioNode
 AudioParam
 AudioScheduledSourceNode
 AudioTrack
 AudioTrackList
 BaseAudioContext
+BeforeUnloadEvent
 BigInt
 BigInt64Array
 BigUint64Array
@@ -41,6 +43,7 @@ CSSLayerBlockRule
 CSSLayerStatementRule
 CSSMediaRule
 CSSNamespaceRule
+CSSNestedDeclarations
 CSSRule
 CSSRuleList
 CSSStyleDeclaration
@@ -57,6 +60,7 @@ ClipboardEvent
 CloseEvent
 CloseWatcher
 Comment
+CompositionEvent
 CountQueuingStrategy
 Crypto
 CryptoKey
@@ -196,6 +200,7 @@ IdleDeadline
 Image
 ImageBitmap
 ImageData
+InputEvent
 Int16Array
 Int32Array
 Int8Array
@@ -242,6 +247,7 @@ PageTransitionEvent
 Path2D
 Performance
 PerformanceEntry
+PerformanceEventTiming
 PerformanceMark
 PerformanceMeasure
 PerformanceNavigation
@@ -342,6 +348,7 @@ SyntaxError
 Text
 TextDecoder
 TextEncoder
+TextEvent
 TextMetrics
 TextTrack
 TextTrackCue
@@ -394,6 +401,7 @@ asyncTest
 printElement
 println
 promiseTest
+removeTestErrorHandler
 spoofCurrentURL
 test
 timeout

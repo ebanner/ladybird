@@ -186,7 +186,7 @@ Bindings::CanPlayTypeResult HTMLMediaElement::can_play_type(StringView type) con
     if (type == "application/octet-stream"sv)
         return Bindings::CanPlayTypeResult::Empty;
 
-    auto mime_type = MUST(MimeSniff::MimeType::parse(type));
+    auto mime_type = MimeSniff::MimeType::parse(type);
 
     if (mime_type.has_value() && mime_type->type() == "video"sv) {
         if (mime_type->subtype() == "webm"sv)
@@ -195,19 +195,16 @@ Bindings::CanPlayTypeResult HTMLMediaElement::can_play_type(StringView type) con
     }
 
     if (mime_type.has_value() && mime_type->type() == "audio"sv) {
+        if (mime_type->subtype() == "flac"sv)
+            return Bindings::CanPlayTypeResult::Probably;
+        if (mime_type->subtype() == "mp3"sv)
+            return Bindings::CanPlayTypeResult::Probably;
         // "Maybe" because we support mp3, but "mpeg" can also refer to MP1 and MP2.
         if (mime_type->subtype() == "mpeg"sv)
             return Bindings::CanPlayTypeResult::Maybe;
-        if (mime_type->subtype() == "mp3"sv)
+        if (mime_type->subtype() == "ogg"sv)
             return Bindings::CanPlayTypeResult::Probably;
         if (mime_type->subtype() == "wav"sv)
-            return Bindings::CanPlayTypeResult::Probably;
-        if (mime_type->subtype() == "flac"sv)
-            return Bindings::CanPlayTypeResult::Probably;
-        // "Maybe" because we support Ogg Vorbis, but "ogg" can contain other codecs
-        if (mime_type->subtype() == "ogg"sv)
-            return Bindings::CanPlayTypeResult::Maybe;
-        if (mime_type->subtype() == "qoa"sv)
             return Bindings::CanPlayTypeResult::Probably;
         return Bindings::CanPlayTypeResult::Maybe;
     }
@@ -398,7 +395,7 @@ WebIDL::ExceptionOr<void> HTMLMediaElement::set_volume(double volume)
     // set to the new value. If the new value is outside the range 0.0 to 1.0 inclusive, then, on setting, an
     // "IndexSizeError" DOMException must be thrown instead.
     if (volume < 0.0 || volume > 1.0)
-        return WebIDL::IndexSizeError::create(realm(), "Volume must be in the range 0.0 to 1.0, inclusive"_fly_string);
+        return WebIDL::IndexSizeError::create(realm(), "Volume must be in the range 0.0 to 1.0, inclusive"_string);
 
     m_volume = volume;
     volume_or_muted_attribute_changed();
@@ -551,7 +548,7 @@ WebIDL::ExceptionOr<void> HTMLMediaElement::load_element()
 
             // 2. Take pending play promises and reject pending play promises with the result and an "AbortError" DOMException.
             auto promises = take_pending_play_promises();
-            reject_pending_play_promises<WebIDL::AbortError>(promises, "Media playback was aborted"_fly_string);
+            reject_pending_play_promises<WebIDL::AbortError>(promises, "Media playback was aborted"_string);
         }
 
         // 7. If seeking is true, set it to false.
@@ -1293,7 +1290,7 @@ WebIDL::ExceptionOr<void> HTMLMediaElement::handle_media_source_failure(Span<JS:
     dispatch_event(DOM::Event::create(realm, HTML::EventNames::error));
 
     // 6. Reject pending play promises with promises and a "NotSupportedError" DOMException.
-    reject_pending_play_promises<WebIDL::NotSupportedError>(promises, "Media is not supported"_fly_string);
+    reject_pending_play_promises<WebIDL::NotSupportedError>(promises, "Media is not supported"_string);
 
     // 7. Set the element's delaying-the-load-event flag to false. This stops delaying the load event.
     m_delaying_the_load_event.clear();
@@ -1519,7 +1516,7 @@ WebIDL::ExceptionOr<void> HTMLMediaElement::pause_element()
             dispatch_event(DOM::Event::create(realm, HTML::EventNames::pause));
 
             // 3. Reject pending play promises with promises and an "AbortError" DOMException.
-            reject_pending_play_promises<WebIDL::AbortError>(promises, "Media playback was paused"_fly_string);
+            reject_pending_play_promises<WebIDL::AbortError>(promises, "Media playback was paused"_string);
         });
 
         // 4. Set the official playback position to the current playback position.
@@ -1771,7 +1768,7 @@ void HTMLMediaElement::reached_end_of_media_playback()
 
             // 3. Take pending play promises and reject pending play promises with the result and an "AbortError" DOMException.
             auto promises = take_pending_play_promises();
-            reject_pending_play_promises<WebIDL::AbortError>(promises, "Media playback has ended"_fly_string);
+            reject_pending_play_promises<WebIDL::AbortError>(promises, "Media playback has ended"_string);
         }
     });
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021-2024, Andreas Kling <kling@serenityos.org>
+ * Copyright (c) 2021-2024, Andreas Kling <andreas@ladybird.org>
  * Copyright (c) 2021, Tobias Christiansen <tobyase@serenityos.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
@@ -585,6 +585,13 @@ void FlexFormattingContext::determine_flex_base_size_and_hypothetical_main_size(
             if (is_row_layout())
                 return get_pixel_width(child_box, size);
             return get_pixel_height(child_box, size);
+        }
+
+        // AD-HOC: If we're sizing the flex container under a min-content constraint in the main axis,
+        //         flex items resolve percentages in the main axis to 0.
+        if (m_available_space_for_items->main.is_min_content()
+            && computed_main_size(item.box).contains_percentage()) {
+            return CSSPixels(0);
         }
 
         // B. If the flex item has ...
@@ -1540,9 +1547,11 @@ void FlexFormattingContext::align_all_flex_lines()
         CSSPixels gap_size = 0;
         switch (flex_container().computed_values().align_content()) {
         case CSS::AlignContent::FlexStart:
+        case CSS::AlignContent::Start:
             start_of_current_line = 0;
             break;
         case CSS::AlignContent::FlexEnd:
+        case CSS::AlignContent::End:
             start_of_current_line = cross_size_of_flex_container - sum_of_flex_line_cross_sizes;
             break;
         case CSS::AlignContent::Center:

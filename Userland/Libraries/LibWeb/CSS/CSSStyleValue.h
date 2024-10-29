@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2023, Andreas Kling <kling@serenityos.org>
+ * Copyright (c) 2018-2023, Andreas Kling <andreas@ladybird.org>
  * Copyright (c) 2021, Tobias Christiansen <tobyase@serenityos.org>
  * Copyright (c) 2021-2024, Sam Atkins <sam@ladybird.org>
  * Copyright (c) 2022-2023, MacDue <macdue@dueutil.tech>
@@ -117,6 +117,7 @@ public:
         Math,
         MathDepth,
         Number,
+        OpenTypeTagged,
         Percentage,
         Position,
         RadialGradient,
@@ -259,6 +260,10 @@ public:
     bool is_number() const { return type() == Type::Number; }
     NumberStyleValue const& as_number() const;
     NumberStyleValue& as_number() { return const_cast<NumberStyleValue&>(const_cast<CSSStyleValue const&>(*this).as_number()); }
+
+    bool is_open_type_tagged() const { return type() == Type::OpenTypeTagged; }
+    OpenTypeTaggedStyleValue const& as_open_type_tagged() const;
+    OpenTypeTaggedStyleValue& as_open_type_tagged() { return const_cast<OpenTypeTaggedStyleValue&>(const_cast<CSSStyleValue const&>(*this).as_open_type_tagged()); }
 
     bool is_percentage() const { return type() == Type::Percentage; }
     PercentageStyleValue const& as_percentage() const;

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2023, Andreas Kling <kling@serenityos.org>
+ * Copyright (c) 2018-2023, Andreas Kling <andreas@ladybird.org>
  * Copyright (c) 2021, the SerenityOS developers.
  * Copyright (c) 2021-2024, Sam Atkins <sam@ladybird.org>
  * Copyright (c) 2024, Matthew Olsson <mattco@serenityos.org>
@@ -127,7 +127,7 @@ RefPtr<CSSStyleValue const> interpolate_transform(DOM::Element& element, CSSStyl
             return {};
         Optional<Painting::PaintableBox const&> paintable_box;
         if (auto layout_node = element.layout_node()) {
-            if (auto paintable = layout_node->paintable(); paintable && is<Painting::PaintableBox>(paintable))
+            if (auto paintable = layout_node->first_paintable(); paintable && is<Painting::PaintableBox>(paintable))
                 paintable_box = *static_cast<Painting::PaintableBox*>(paintable);
         }
         if (auto matrix = transformation->to_matrix(paintable_box); !matrix.is_error())

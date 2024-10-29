@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, Andreas Kling <kling@serenityos.org>
+ * Copyright (c) 2020, Andreas Kling <andreas@ladybird.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  */
@@ -55,6 +55,8 @@ private:
     virtual bool is_html_object_element() const override { return true; }
 
     virtual void initialize(JS::Realm&) override;
+
+    virtual void apply_presentational_hints(CSS::StyleProperties&) const override;
 
     virtual JS::GCPtr<Layout::Node> create_layout_node(NonnullRefPtr<CSS::StyleProperties>) override;
 

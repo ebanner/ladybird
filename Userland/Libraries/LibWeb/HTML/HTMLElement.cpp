@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2022, Andreas Kling <kling@serenityos.org>
+ * Copyright (c) 2018-2022, Andreas Kling <andreas@ladybird.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  */
@@ -9,6 +9,7 @@
 #include <LibWeb/Bindings/ExceptionOrUtils.h>
 #include <LibWeb/Bindings/HTMLElementPrototype.h>
 #include <LibWeb/DOM/Document.h>
+#include <LibWeb/DOM/ElementFactory.h>
 #include <LibWeb/DOM/IDLEventListener.h>
 #include <LibWeb/DOM/LiveNodeList.h>
 #include <LibWeb/DOM/ShadowRoot.h>
@@ -32,6 +33,7 @@
 #include <LibWeb/Layout/Box.h>
 #include <LibWeb/Layout/BreakNode.h>
 #include <LibWeb/Layout/TextNode.h>
+#include <LibWeb/Namespace.h>
 #include <LibWeb/Painting/PaintableBox.h>
 #include <LibWeb/UIEvents/EventNames.h>
 #include <LibWeb/UIEvents/FocusEvent.h>
@@ -147,13 +149,16 @@ WebIDL::ExceptionOr<void> HTMLElement::set_content_editable(StringView content_e
         MUST(set_attribute(HTML::AttributeNames::contenteditable, "false"_string));
         return {};
     }
-    return WebIDL::SyntaxError::create(realm(), "Invalid contentEditable value, must be 'true', 'false', or 'inherit'"_fly_string);
+    return WebIDL::SyntaxError::create(realm(), "Invalid contentEditable value, must be 'true', 'false', or 'inherit'"_string);
 }
 
+// https://html.spec.whatwg.org/multipage/dom.html#set-the-inner-text-steps
 void HTMLElement::set_inner_text(StringView text)
 {
+    // 1. Let fragment be the rendered text fragment for value given element's node document.
+    // 2. Replace all with fragment within element.
     remove_all_children();
-    MUST(append_child(document().create_text_node(MUST(String::from_utf8(text)))));
+    append_rendered_text_fragment(text);
 
     set_needs_style_update(true);
 }
@@ -163,6 +168,45 @@ WebIDL::ExceptionOr<void> HTMLElement::set_outer_text(String)
 {
     dbgln("FIXME: Implement HTMLElement::set_outer_text()");
     return {};
+}
+
+// https://html.spec.whatwg.org/multipage/dom.html#rendered-text-fragment
+void HTMLElement::append_rendered_text_fragment(StringView input)
+{
+    // FIXME: 1. Let fragment be a new DocumentFragment whose node document is document.
+    //      Instead of creating a DocumentFragment the nodes are appended directly.
+
+    // 2. Let position be a position variable for input, initially pointing at the start of input.
+    // 3. Let text be the empty string.
+    // 4. While position is not past the end of input:
+    while (!input.is_empty()) {
+        // 1. Collect a sequence of code points that are not U+000A LF or U+000D CR from input given position, and set text to the result.
+        auto newline_index = input.find_any_of("\n\r"sv);
+        size_t const sequence_end_index = newline_index.value_or(input.length());
+        StringView const text = input.substring_view(0, sequence_end_index);
+        input = input.substring_view_starting_after_substring(text);
+
+        // 2. If text is not the empty string, then append a new Text node whose data is text and node document is document to fragment.
+        if (!text.is_empty()) {
+            MUST(append_child(document().create_text_node(MUST(String::from_utf8(text)))));
+        }
+
+        // 3. While position is not past the end of input, and the code point at position is either U+000A LF or U+000D CR:
+        while (input.starts_with('\n') || input.starts_with('\r')) {
+            // 1. If the code point at position is U+000D CR and the next code point is U+000A LF, then advance position to the next code point in input.
+            if (input.starts_with("\r\n"sv)) {
+                // 2. Advance position to the next code point in input.
+                input = input.substring_view(2);
+            } else {
+                // 2. Advance position to the next code point in input.
+                input = input.substring_view(1);
+            }
+
+            // 3. Append the result of creating an element given document, br, and the HTML namespace to fragment.
+            auto br_element = DOM::create_element(document(), HTML::TagNames::br, Namespace::HTML).release_value();
+            MUST(append_child(br_element));
+        }
+    }
 }
 
 // https://html.spec.whatwg.org/multipage/dom.html#get-the-text-steps
@@ -651,26 +695,26 @@ WebIDL::ExceptionOr<JS::NonnullGCPtr<ElementInternals>> HTMLElement::attach_inte
 {
     // 1. If this's is value is not null, then throw a "NotSupportedError" DOMException.
     if (is_value().has_value())
-        return WebIDL::NotSupportedError::create(realm(), "ElementInternals cannot be attached to a customized build-in element"_fly_string);
+        return WebIDL::NotSupportedError::create(realm(), "ElementInternals cannot be attached to a customized build-in element"_string);
 
     // 2. Let definition be the result of looking up a custom element definition given this's node document, its namespace, its local name, and null as the is value.
     auto definition = document().lookup_custom_element_definition(namespace_uri(), local_name(), is_value());
 
     // 3. If definition is null, then throw an "NotSupportedError" DOMException.
     if (!definition)
-        return WebIDL::NotSupportedError::create(realm(), "ElementInternals cannot be attached to an element that is not a custom element"_fly_string);
+        return WebIDL::NotSupportedError::create(realm(), "ElementInternals cannot be attached to an element that is not a custom element"_string);
 
     // 4. If definition's disable internals is true, then throw a "NotSupportedError" DOMException.
     if (definition->disable_internals())
-        return WebIDL::NotSupportedError::create(realm(), "ElementInternals are disabled for this custom element"_fly_string);
+        return WebIDL::NotSupportedError::create(realm(), "ElementInternals are disabled for this custom element"_string);
 
     // 5. If this's attached internals is non-null, then throw an "NotSupportedError" DOMException.
     if (m_attached_internals)
-        return WebIDL::NotSupportedError::create(realm(), "ElementInternals already attached"_fly_string);
+        return WebIDL::NotSupportedError::create(realm(), "ElementInternals already attached"_string);
 
     // 6. If this's custom element state is not "precustomized" or "custom", then throw a "NotSupportedError" DOMException.
     if (!first_is_one_of(custom_element_state(), DOM::CustomElementState::Precustomized, DOM::CustomElementState::Custom))
-        return WebIDL::NotSupportedError::create(realm(), "Custom element is in an invalid state to attach ElementInternals"_fly_string);
+        return WebIDL::NotSupportedError::create(realm(), "Custom element is in an invalid state to attach ElementInternals"_string);
 
     // 7. Set this's attached internals to a new ElementInternals instance whose target element is this.
     auto internals = ElementInternals::create(realm(), *this);

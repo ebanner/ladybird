@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2022, Andreas Kling <kling@serenityos.org>
+ * Copyright (c) 2018-2022, Andreas Kling <andreas@ladybird.org>
  * Copyright (c) 2023, MacDue <macdue@dueutil.tech>
  *
  * SPDX-License-Identifier: BSD-2-Clause
@@ -131,6 +131,9 @@ void SVGPathPaintable::paint(PaintContext& context, PaintPhase phase) const
             .translation = offset,
         });
     }
+
+    auto stroke_linecap = graphics_element.stroke_linecap().value_or(CSS::StrokeLinecap::Butt);
+    (void)stroke_linecap; // FIXME: Use
 
     auto stroke_opacity = graphics_element.stroke_opacity().value_or(1);
 

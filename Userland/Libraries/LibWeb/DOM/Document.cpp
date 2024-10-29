@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2024, Andreas Kling <kling@serenityos.org>
+ * Copyright (c) 2018-2024, Andreas Kling <andreas@ladybird.org>
  * Copyright (c) 2021-2023, Linus Groh <linusg@serenityos.org>
  * Copyright (c) 2021-2023, Luke Wilde <lukew@serenityos.org>
  * Copyright (c) 2021-2024, Sam Atkins <sam@ladybird.org>
@@ -18,6 +18,8 @@
 #include <LibJS/Runtime/Array.h>
 #include <LibJS/Runtime/FunctionObject.h>
 #include <LibJS/Runtime/NativeFunction.h>
+#include <LibURL/Origin.h>
+#include <LibURL/Parser.h>
 #include <LibUnicode/Segmenter.h>
 #include <LibWeb/Animations/Animation.h>
 #include <LibWeb/Animations/AnimationPlaybackEvent.h>
@@ -38,6 +40,7 @@
 #include <LibWeb/Cookie/ParsedCookie.h>
 #include <LibWeb/DOM/AdoptedStyleSheets.h>
 #include <LibWeb/DOM/Attr.h>
+#include <LibWeb/DOM/BeforeUnloadEvent.h>
 #include <LibWeb/DOM/CDATASection.h>
 #include <LibWeb/DOM/Comment.h>
 #include <LibWeb/DOM/CustomEvent.h>
@@ -93,11 +96,11 @@
 #include <LibWeb/HTML/ListOfAvailableImages.h>
 #include <LibWeb/HTML/Location.h>
 #include <LibWeb/HTML/MessageEvent.h>
+#include <LibWeb/HTML/MessagePort.h>
 #include <LibWeb/HTML/Navigable.h>
 #include <LibWeb/HTML/Navigation.h>
 #include <LibWeb/HTML/NavigationParams.h>
 #include <LibWeb/HTML/Numbers.h>
-#include <LibWeb/HTML/Origin.h>
 #include <LibWeb/HTML/Parser/HTMLParser.h>
 #include <LibWeb/HTML/PopStateEvent.h>
 #include <LibWeb/HTML/Scripting/ClassicScript.h>
@@ -126,10 +129,12 @@
 #include <LibWeb/SVG/SVGStyleElement.h>
 #include <LibWeb/SVG/SVGTitleElement.h>
 #include <LibWeb/Selection/Selection.h>
+#include <LibWeb/UIEvents/CompositionEvent.h>
 #include <LibWeb/UIEvents/EventNames.h>
 #include <LibWeb/UIEvents/FocusEvent.h>
 #include <LibWeb/UIEvents/KeyboardEvent.h>
 #include <LibWeb/UIEvents/MouseEvent.h>
+#include <LibWeb/UIEvents/TextEvent.h>
 #include <LibWeb/WebIDL/AbstractOperations.h>
 #include <LibWeb/WebIDL/DOMException.h>
 #include <LibWeb/WebIDL/ExceptionOr.h>
@@ -339,7 +344,14 @@ WebIDL::ExceptionOr<JS::NonnullGCPtr<Document>> Document::create_and_initialize(
     // FIXME: 15. Create the navigation timing entry for document, with navigationParams's response's timing info, redirectCount, navigationParams's navigation timing type, and
     //            navigationParams's response's service worker timing info.
 
-    // FIXME: 16. If navigationParams's response has a `Refresh` header, then:
+    // 16. If navigationParams's response has a `Refresh` header, then:
+    if (auto maybe_refresh = navigation_params.response->header_list()->get("Refresh"sv.bytes()); maybe_refresh.has_value()) {
+        // 1. Let value be the isomorphic decoding of the value of the header.
+        auto const& value = maybe_refresh.value();
+
+        // 2. Run the shared declarative refresh steps with document and value.
+        document->shared_declarative_refresh_steps(value, nullptr);
+    }
 
     // FIXME: 17. If navigationParams's commit early hints is not null, then call navigationParams's commit early hints with document.
 
@@ -547,11 +559,11 @@ WebIDL::ExceptionOr<void> Document::run_the_document_write_steps(StringView inpu
 {
     // 1. If document is an XML document, then throw an "InvalidStateError" DOMException.
     if (m_type == Type::XML)
-        return WebIDL::InvalidStateError::create(realm(), "write() called on XML document."_fly_string);
+        return WebIDL::InvalidStateError::create(realm(), "write() called on XML document."_string);
 
     // 2. If document's throw-on-dynamic-markup-insertion counter is greater than 0, then throw an "InvalidStateError" DOMException.
     if (m_throw_on_dynamic_markup_insertion_counter > 0)
-        return WebIDL::InvalidStateError::create(realm(), "throw-on-dynamic-markup-insertion-counter greater than zero."_fly_string);
+        return WebIDL::InvalidStateError::create(realm(), "throw-on-dynamic-markup-insertion-counter greater than zero."_string);
 
     // 3. If document's active parser was aborted is true, then return.
     if (m_active_parser_was_aborted)
@@ -594,18 +606,18 @@ WebIDL::ExceptionOr<Document*> Document::open(Optional<String> const&, Optional<
 
     // 1. If document is an XML document, then throw an "InvalidStateError" DOMException exception.
     if (m_type == Type::XML)
-        return WebIDL::InvalidStateError::create(realm(), "open() called on XML document."_fly_string);
+        return WebIDL::InvalidStateError::create(realm(), "open() called on XML document."_string);
 
     // 2. If document's throw-on-dynamic-markup-insertion counter is greater than 0, then throw an "InvalidStateError" DOMException.
     if (m_throw_on_dynamic_markup_insertion_counter > 0)
-        return WebIDL::InvalidStateError::create(realm(), "throw-on-dynamic-markup-insertion-counter greater than zero."_fly_string);
+        return WebIDL::InvalidStateError::create(realm(), "throw-on-dynamic-markup-insertion-counter greater than zero."_string);
 
     // FIXME: 3. Let entryDocument be the entry global object's associated Document.
     auto& entry_document = *this;
 
     // 4. If document's origin is not same origin to entryDocument's origin, then throw a "SecurityError" DOMException.
     if (origin() != entry_document.origin())
-        return WebIDL::SecurityError::create(realm(), "Document.origin() not the same as entryDocument's."_fly_string);
+        return WebIDL::SecurityError::create(realm(), "Document.origin() not the same as entryDocument's."_string);
 
     // 5. If document has an active parser whose script nesting level is greater than 0, then return document.
     if (m_parser && m_parser->script_nesting_level() > 0)
@@ -665,10 +677,10 @@ WebIDL::ExceptionOr<JS::GCPtr<HTML::WindowProxy>> Document::open(StringView url,
 {
     // 1. If this is not fully active, then throw an "InvalidAccessError" DOMException exception.
     if (!is_fully_active())
-        return WebIDL::InvalidAccessError::create(realm(), "Cannot perform open on a document that isn't fully active."_fly_string);
+        return WebIDL::InvalidAccessError::create(realm(), "Cannot perform open on a document that isn't fully active."_string);
 
     // 2. Return the result of running the window open steps with url, name, and features.
-    return window()->open_impl(url, name, features);
+    return window()->window_open_steps(url, name, features);
 }
 
 // https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#closing-the-input-stream
@@ -676,11 +688,11 @@ WebIDL::ExceptionOr<void> Document::close()
 {
     // 1. If document is an XML document, then throw an "InvalidStateError" DOMException exception.
     if (m_type == Type::XML)
-        return WebIDL::InvalidStateError::create(realm(), "close() called on XML document."_fly_string);
+        return WebIDL::InvalidStateError::create(realm(), "close() called on XML document."_string);
 
     // 2. If document's throw-on-dynamic-markup-insertion counter is greater than 0, then throw an "InvalidStateError" DOMException.
     if (m_throw_on_dynamic_markup_insertion_counter > 0)
-        return WebIDL::InvalidStateError::create(realm(), "throw-on-dynamic-markup-insertion-counter greater than zero."_fly_string);
+        return WebIDL::InvalidStateError::create(realm(), "throw-on-dynamic-markup-insertion-counter greater than zero."_string);
 
     // 3. If there is no script-created parser associated with the document, then return.
     if (!m_parser)
@@ -695,6 +707,9 @@ WebIDL::ExceptionOr<void> Document::close()
 
     // FIXME: 6. Run the tokenizer, processing resulting tokens as they are emitted, and stopping when the tokenizer reaches the explicit "EOF" character or spins the event loop.
     m_parser->run();
+
+    // AD-HOC: This ensures that a load event is fired if the node navigable's container is an iframe.
+    completely_finish_loading();
 
     return {};
 }
@@ -715,12 +730,12 @@ JS::GCPtr<HTML::WindowProxy const> Document::default_view() const
     return const_cast<Document*>(this)->default_view();
 }
 
-HTML::Origin Document::origin() const
+URL::Origin Document::origin() const
 {
     return m_origin;
 }
 
-void Document::set_origin(HTML::Origin const& origin)
+void Document::set_origin(URL::Origin const& origin)
 {
     m_origin = origin;
 }
@@ -828,17 +843,18 @@ void Document::set_dir(String const& dir)
         html->set_dir(dir);
 }
 
+// https://html.spec.whatwg.org/multipage/dom.html#the-body-element-2
 HTML::HTMLElement* Document::body()
 {
+    // The body element of a document is the first of the html element's children that is either
+    // a body element or a frameset element, or null if there is no such element.
     auto* html = html_element();
     if (!html)
         return nullptr;
-    auto* first_body = html->first_child_of_type<HTML::HTMLBodyElement>();
-    if (first_body)
-        return first_body;
-    auto* first_frameset = html->first_child_of_type<HTML::HTMLFrameSetElement>();
-    if (first_frameset)
-        return first_frameset;
+    for (auto* child = html->first_child(); child; child = child->next_sibling()) {
+        if (is<HTML::HTMLBodyElement>(*child) || is<HTML::HTMLFrameSetElement>(*child))
+            return static_cast<HTML::HTMLElement*>(child);
+    }
     return nullptr;
 }
 
@@ -846,7 +862,7 @@ HTML::HTMLElement* Document::body()
 WebIDL::ExceptionOr<void> Document::set_body(HTML::HTMLElement* new_body)
 {
     if (!is<HTML::HTMLBodyElement>(new_body) && !is<HTML::HTMLFrameSetElement>(new_body))
-        return WebIDL::HierarchyRequestError::create(realm(), "Invalid document body element, must be 'body' or 'frameset'"_fly_string);
+        return WebIDL::HierarchyRequestError::create(realm(), "Invalid document body element, must be 'body' or 'frameset'"_string);
 
     auto* existing_body = body();
     if (existing_body) {
@@ -856,7 +872,7 @@ WebIDL::ExceptionOr<void> Document::set_body(HTML::HTMLElement* new_body)
 
     auto* document_element = this->document_element();
     if (!document_element)
-        return WebIDL::HierarchyRequestError::create(realm(), "Missing document element"_fly_string);
+        return WebIDL::HierarchyRequestError::create(realm(), "Missing document element"_string);
 
     (void)TRY(document_element->append_child(*new_body));
     return {};
@@ -908,7 +924,7 @@ WebIDL::ExceptionOr<void> Document::set_title(String const& title)
             element = TRY(DOM::create_element(*this, HTML::TagNames::title, Namespace::SVG));
 
             // 2. Insert element as the first child of the document element.
-            document_element->insert_before(*element, nullptr);
+            document_element->insert_before(*element, document_element->first_child());
         }
 
         // 3. String replace all with the given value within element.
@@ -1151,6 +1167,7 @@ void Document::update_layout()
     // Assign each box that establishes a formatting context a list of absolutely positioned children it should take care of during layout
     m_layout_root->for_each_in_inclusive_subtree_of_type<Layout::Box>([&](auto& child) {
         child.clear_contained_abspos_children();
+        child.clear_contained_children();
         return TraversalDecision::Continue;
     });
     m_layout_root->for_each_in_inclusive_subtree([&](auto& child) {
@@ -1168,6 +1185,7 @@ void Document::update_layout()
             }
             VERIFY(closest_box_that_establishes_formatting_context);
             closest_box_that_establishes_formatting_context->add_contained_abspos_child(child);
+            containing_block->add_contained_child(child);
         }
         return TraversalDecision::Continue;
     });
@@ -1374,14 +1392,14 @@ void Document::set_inspected_node(Node* node, Optional<CSS::Selector::PseudoElem
     if (m_inspected_node.ptr() == node && m_inspected_pseudo_element == pseudo_element)
         return;
 
-    if (auto layout_node = inspected_layout_node(); layout_node && layout_node->paintable())
-        layout_node->paintable()->set_needs_display();
+    if (auto layout_node = inspected_layout_node(); layout_node && layout_node->first_paintable())
+        layout_node->first_paintable()->set_needs_display();
 
     m_inspected_node = node;
     m_inspected_pseudo_element = pseudo_element;
 
-    if (auto layout_node = inspected_layout_node(); layout_node && layout_node->paintable())
-        layout_node->paintable()->set_needs_display();
+    if (auto layout_node = inspected_layout_node(); layout_node && layout_node->first_paintable())
+        layout_node->first_paintable()->set_needs_display();
 }
 
 Layout::Node* Document::inspected_layout_node()
@@ -1473,12 +1491,13 @@ void Document::set_hovered_node(Node* node)
     }
 }
 
+// https://html.spec.whatwg.org/multipage/dom.html#dom-document-getelementsbyname
 JS::NonnullGCPtr<NodeList> Document::get_elements_by_name(FlyString const& name)
 {
     return LiveNodeList::create(realm(), *this, LiveNodeList::Scope::Descendants, [name](auto const& node) {
-        if (!is<Element>(node))
+        if (!is<HTML::HTMLElement>(node))
             return false;
-        return verify_cast<Element>(node).name() == name;
+        return verify_cast<HTML::HTMLElement>(node).name() == name;
     });
 }
 
@@ -1635,7 +1654,7 @@ WebIDL::ExceptionOr<JS::NonnullGCPtr<Element>> Document::create_element(String c
 
     // 1. If localName does not match the Name production, then throw an "InvalidCharacterError" DOMException.
     if (!is_valid_name(a_local_name))
-        return WebIDL::InvalidCharacterError::create(realm(), "Invalid character in tag name."_fly_string);
+        return WebIDL::InvalidCharacterError::create(realm(), "Invalid character in tag name."_string);
 
     // 2. If this is an HTML document, then set localName to localName in ASCII lowercase.
     if (document_type() == Type::HTML)
@@ -1696,11 +1715,11 @@ WebIDL::ExceptionOr<JS::NonnullGCPtr<CDATASection>> Document::create_cdata_secti
 {
     // 1. If this is an HTML document, then throw a "NotSupportedError" DOMException.
     if (is_html_document())
-        return WebIDL::NotSupportedError::create(realm(), "This operation is not supported for HTML documents"_fly_string);
+        return WebIDL::NotSupportedError::create(realm(), "This operation is not supported for HTML documents"_string);
 
     // 2. If data contains the string "]]>", then throw an "InvalidCharacterError" DOMException.
     if (data.contains("]]>"sv))
-        return WebIDL::InvalidCharacterError::create(realm(), "String may not contain ']]>'"_fly_string);
+        return WebIDL::InvalidCharacterError::create(realm(), "String may not contain ']]>'"_string);
 
     // 3. Return a new CDATASection node with its data set to data and node document set to this.
     return heap().allocate<CDATASection>(realm(), *this, data);
@@ -1739,9 +1758,9 @@ WebIDL::ExceptionOr<JS::NonnullGCPtr<Event>> Document::create_event(StringView i
     // 2. If interface is an ASCII case-insensitive match for any of the strings in the first column in the following table,
     //      then set constructor to the interface in the second column on the same row as the matching string:
     if (Infra::is_ascii_case_insensitive_match(interface, "beforeunloadevent"sv)) {
-        event = Event::create(realm, FlyString {}); // FIXME: Create BeforeUnloadEvent
+        event = BeforeUnloadEvent::create(realm, FlyString {});
     } else if (Infra::is_ascii_case_insensitive_match(interface, "compositionevent"sv)) {
-        event = Event::create(realm, FlyString {}); // FIXME: Create CompositionEvent
+        event = UIEvents::CompositionEvent::create(realm, String {});
     } else if (Infra::is_ascii_case_insensitive_match(interface, "customevent"sv)) {
         event = CustomEvent::create(realm, FlyString {});
     } else if (Infra::is_ascii_case_insensitive_match(interface, "devicemotionevent"sv)) {
@@ -1771,7 +1790,7 @@ WebIDL::ExceptionOr<JS::NonnullGCPtr<Event>> Document::create_event(StringView i
     } else if (Infra::is_ascii_case_insensitive_match(interface, "svgevents"sv)) {
         event = Event::create(realm, FlyString {});
     } else if (Infra::is_ascii_case_insensitive_match(interface, "textevent"sv)) {
-        event = Event::create(realm, FlyString {}); // FIXME: Create CompositionEvent
+        event = UIEvents::TextEvent::create(realm, FlyString {});
     } else if (Infra::is_ascii_case_insensitive_match(interface, "touchevent"sv)) {
         event = Event::create(realm, FlyString {}); // FIXME: Create TouchEvent
     } else if (Infra::is_ascii_case_insensitive_match(interface, "uievent"sv)
@@ -1781,7 +1800,7 @@ WebIDL::ExceptionOr<JS::NonnullGCPtr<Event>> Document::create_event(StringView i
 
     // 3. If constructor is null, then throw a "NotSupportedError" DOMException.
     if (!event) {
-        return WebIDL::NotSupportedError::create(realm, "No constructor for interface found"_fly_string);
+        return WebIDL::NotSupportedError::create(realm, "No constructor for interface found"_string);
     }
 
     // FIXME: 4. If the interface indicated by constructor is not exposed on the relevant global object of this, then throw a "NotSupportedError" DOMException.
@@ -1862,7 +1881,7 @@ WebIDL::ExceptionOr<JS::NonnullGCPtr<Node>> Document::import_node(JS::NonnullGCP
 {
     // 1. If node is a document or shadow root, then throw a "NotSupportedError" DOMException.
     if (is<Document>(*node) || is<ShadowRoot>(*node))
-        return WebIDL::NotSupportedError::create(realm(), "Cannot import a document or shadow root."_fly_string);
+        return WebIDL::NotSupportedError::create(realm(), "Cannot import a document or shadow root."_string);
 
     // 2. Return a clone of node, with this and the clone children flag set if deep is true.
     return node->clone_node(this, deep);
@@ -1936,10 +1955,10 @@ void Document::adopt_node(Node& node)
 WebIDL::ExceptionOr<JS::NonnullGCPtr<Node>> Document::adopt_node_binding(JS::NonnullGCPtr<Node> node)
 {
     if (is<Document>(*node))
-        return WebIDL::NotSupportedError::create(realm(), "Cannot adopt a document into a document"_fly_string);
+        return WebIDL::NotSupportedError::create(realm(), "Cannot adopt a document into a document"_string);
 
     if (is<ShadowRoot>(*node))
-        return WebIDL::HierarchyRequestError::create(realm(), "Cannot adopt a shadow root into a document"_fly_string);
+        return WebIDL::HierarchyRequestError::create(realm(), "Cannot adopt a shadow root into a document"_string);
 
     if (is<DocumentFragment>(*node) && verify_cast<DocumentFragment>(*node).host())
         return node;
@@ -2292,6 +2311,25 @@ void Document::scroll_to_the_fragment()
 
         // FIXME: 8. Move the sequential focus navigation starting point to target.
     }
+}
+
+// https://html.spec.whatwg.org/multipage/browsing-the-web.html#try-to-scroll-to-the-fragment
+void Document::try_to_scroll_to_the_fragment()
+{
+    // FIXME: According to the spec we should only scroll here if document has no parser or parsing has stopped.
+    //        It should be ok to remove this after we implement navigation events and scrolling will happen in
+    //        "process scroll behavior".
+    //  To try to scroll to the fragment for a Document document, perform the following steps in parallel:
+    //  1. Wait for an implementation-defined amount of time. (This is intended to allow the user agent to
+    //     optimize the user experience in the face of performance concerns.)
+    //  2. Queue a global task on the navigation and traversal task source given document's relevant global
+    //     object to run these steps:
+    //      1. If document has no parser, or its parser has stopped parsing, or the user agent has reason to
+    //         believe the user is no longer interested in scrolling to the fragment, then abort these steps.
+    //      2. Scroll to the fragment given document.
+    //      3. If document's indicated part is still null, then try to scroll to the fragment for document.
+
+    scroll_to_the_fragment();
 }
 
 // https://drafts.csswg.org/cssom-view-1/#scroll-to-the-beginning-of-the-document
@@ -2748,7 +2786,7 @@ void Document::evaluate_media_rules()
         return;
 
     bool any_media_queries_changed_match_state = false;
-    for_each_active_css_style_sheet([&](CSS::CSSStyleSheet& style_sheet) {
+    for_each_active_css_style_sheet([&](CSS::CSSStyleSheet& style_sheet, auto) {
         if (style_sheet.evaluate_media_queries(*window))
             any_media_queries_changed_match_state = true;
     });
@@ -2840,7 +2878,7 @@ bool Document::is_valid_name(String const& name)
 WebIDL::ExceptionOr<Document::PrefixAndTagName> Document::validate_qualified_name(JS::Realm& realm, FlyString const& qualified_name)
 {
     if (qualified_name.is_empty())
-        return WebIDL::InvalidCharacterError::create(realm, "Empty string is not a valid qualified name."_fly_string);
+        return WebIDL::InvalidCharacterError::create(realm, "Empty string is not a valid qualified name."_string);
 
     auto utf8view = qualified_name.code_points();
 
@@ -2852,19 +2890,19 @@ WebIDL::ExceptionOr<Document::PrefixAndTagName> Document::validate_qualified_nam
         auto code_point = *it;
         if (code_point == ':') {
             if (colon_offset.has_value())
-                return WebIDL::InvalidCharacterError::create(realm, "More than one colon (:) in qualified name."_fly_string);
+                return WebIDL::InvalidCharacterError::create(realm, "More than one colon (:) in qualified name."_string);
             colon_offset = utf8view.byte_offset_of(it);
             at_start_of_name = true;
             continue;
         }
         if (at_start_of_name) {
             if (!is_valid_name_start_character(code_point))
-                return WebIDL::InvalidCharacterError::create(realm, "Invalid start of qualified name."_fly_string);
+                return WebIDL::InvalidCharacterError::create(realm, "Invalid start of qualified name."_string);
             at_start_of_name = false;
             continue;
         }
         if (!is_valid_name_character(code_point))
-            return WebIDL::InvalidCharacterError::create(realm, "Invalid character in qualified name."_fly_string);
+            return WebIDL::InvalidCharacterError::create(realm, "Invalid character in qualified name."_string);
     }
 
     if (!colon_offset.has_value())
@@ -2874,10 +2912,10 @@ WebIDL::ExceptionOr<Document::PrefixAndTagName> Document::validate_qualified_nam
         };
 
     if (*colon_offset == 0)
-        return WebIDL::InvalidCharacterError::create(realm, "Qualified name can't start with colon (:)."_fly_string);
+        return WebIDL::InvalidCharacterError::create(realm, "Qualified name can't start with colon (:)."_string);
 
     if (*colon_offset >= (qualified_name.bytes_as_string_view().length() - 1))
-        return WebIDL::InvalidCharacterError::create(realm, "Qualified name can't end with colon (:)."_fly_string);
+        return WebIDL::InvalidCharacterError::create(realm, "Qualified name can't end with colon (:)."_string);
 
     return Document::PrefixAndTagName {
         .prefix = MUST(FlyString::from_utf8(qualified_name.bytes_as_string_view().substring_view(0, *colon_offset))),
@@ -3273,22 +3311,35 @@ void Document::run_unloading_cleanup_steps()
 // https://html.spec.whatwg.org/multipage/document-lifecycle.html#destroy-a-document
 void Document::destroy()
 {
-    // NOTE: Abort needs to happen before destory. There is currently bug in the spec: https://github.com/whatwg/html/issues/9148
-    // 4. Abort document.
+    // FIXME: 1. Assert: this is running as part of a task queued on document's relevant agent's event loop.
+
+    // 2. Abort document.
     abort();
 
-    // 2. Set document's salvageable state to false.
+    // 3. Set document's salvageable state to false.
     m_salvageable = false;
 
-    // 3. Run any unloading document cleanup steps for document that are defined by this specification and other applicable specifications.
+    // 4. Let ports be the list of MessagePorts whose relevant global object's associated Document is document.
+    // 5. For each port in ports, disentangle port.
+    HTML::MessagePort::for_each_message_port([&](HTML::MessagePort& port) {
+        auto& global = HTML::relevant_global_object(port);
+        if (!is<HTML::Window>(global))
+            return;
+
+        auto& window = static_cast<HTML::Window&>(global);
+        if (&window.associated_document() == this)
+            port.disentangle();
+    });
+
+    // 6. Run any unloading document cleanup steps for document that are defined by this specification and other applicable specifications.
     run_unloading_cleanup_steps();
 
-    // 5. Remove any tasks whose document is document from any task queue (without running those tasks).
+    // 7. Remove any tasks whose document is document from any task queue (without running those tasks).
     HTML::main_thread_event_loop().task_queue().remove_tasks_matching([this](auto& task) {
         return task.document() == this;
     });
 
-    // 6. Set document's browsing context to null.
+    // 8. Set document's browsing context to null.
     m_browsing_context = nullptr;
 
     // Not in the spec:
@@ -3297,14 +3348,12 @@ void Document::destroy()
             HTML::all_navigables().remove(navigable_container->content_navigable());
     }
 
-    // 7. Set document's node navigable's active session history entry's document state's document to null.
-    if (navigable()) {
-        navigable()->active_session_history_entry()->document_state()->set_document(nullptr);
-    }
+    // 9. Set document's node navigable's active session history entry's document state's document to null.
+    if (auto navigable = this->navigable())
+        navigable->active_session_history_entry()->document_state()->set_document(nullptr);
 
-    // FIXME: 8. Remove document from the owner set of each WorkerGlobalScope object whose set contains document.
-
-    // FIXME: 9. For each workletGlobalScope in document's worklet global scopes, terminate workletGlobalScope.
+    // FIXME: 10. Remove document from the owner set of each WorkerGlobalScope object whose set contains document.
+    // FIXME: 11. For each workletGlobalScope in document's worklet global scopes, terminate workletGlobalScope.
 }
 
 // https://html.spec.whatwg.org/multipage/browsing-the-web.html#make-document-unsalvageable
@@ -3678,11 +3727,11 @@ WebIDL::ExceptionOr<JS::NonnullGCPtr<Attr>> Document::create_attribute(String co
 {
     // 1. If localName does not match the Name production in XML, then throw an "InvalidCharacterError" DOMException.
     if (!is_valid_name(local_name))
-        return WebIDL::InvalidCharacterError::create(realm(), "Invalid character in attribute name."_fly_string);
+        return WebIDL::InvalidCharacterError::create(realm(), "Invalid character in attribute name."_string);
 
     // 2. If this is an HTML document, then set localName to localName in ASCII lowercase.
     // 3. Return a new attribute whose local name is localName and node document is this.
-    return Attr::create(*this, is_html_document() ? MUST(Infra::to_ascii_lowercase(local_name)) : local_name);
+    return Attr::create(*this, is_html_document() ? local_name.to_ascii_lowercase() : local_name);
 }
 
 // https://dom.spec.whatwg.org/#dom-document-createattributens
@@ -4362,11 +4411,8 @@ void Document::update_for_history_step_application(JS::NonnullGCPtr<HTML::Sessio
 
     // 8. If documentIsNew is true, then:
     if (document_is_new) {
-        // FIXME: 1. Try to scroll to the fragment for document.
-        // FIXME: According to the spec we should only scroll here if document has no parser or parsing has stopped.
-        //        It should be ok to remove this after we implement navigation events and scrolling will happen in
-        //        "process scroll behavior".
-        scroll_to_the_fragment();
+        // 1. Try to scroll to the fragment for document.
+        try_to_scroll_to_the_fragment();
 
         // 2. At this point scripts may run for the newly-created document document.
         m_ready_to_run_scripts = true;
@@ -4566,31 +4612,6 @@ void Document::remove_replaced_animations()
             }
         }
     }
-}
-
-void Document::ensure_animation_timer()
-{
-    constexpr static auto timer_delay_ms = 1000 / 60;
-    if (!m_animation_driver_timer) {
-        m_animation_driver_timer = Core::Timer::create_repeating(timer_delay_ms, [this] {
-            bool has_animations = false;
-            for (auto& timeline : m_associated_animation_timelines) {
-                if (!timeline->associated_animations().is_empty()) {
-                    has_animations = true;
-                    break;
-                }
-            }
-            if (!has_animations) {
-                m_animation_driver_timer->stop();
-                return;
-            }
-            auto* window_or_worker = dynamic_cast<HTML::WindowOrWorkerGlobalScopeMixin*>(&realm().global_object());
-            VERIFY(window_or_worker);
-            update_animations_and_send_events(window_or_worker->performance()->now());
-        });
-    }
-
-    m_animation_driver_timer->start();
 }
 
 Vector<JS::NonnullGCPtr<Animations::Animation>> Document::get_animations()
@@ -5154,21 +5175,28 @@ WebIDL::ExceptionOr<void> Document::set_adopted_style_sheets(JS::Value new_value
     return {};
 }
 
-void Document::for_each_active_css_style_sheet(Function<void(CSS::CSSStyleSheet&)>&& callback) const
+void Document::for_each_active_css_style_sheet(Function<void(CSS::CSSStyleSheet&, JS::GCPtr<DOM::ShadowRoot>)>&& callback) const
 {
     if (m_style_sheets) {
         for (auto& style_sheet : m_style_sheets->sheets()) {
             if (!(style_sheet->is_alternate() && style_sheet->disabled()))
-                callback(*style_sheet);
+                callback(*style_sheet, {});
         }
     }
 
     if (m_adopted_style_sheets) {
         m_adopted_style_sheets->for_each<CSS::CSSStyleSheet>([&](auto& style_sheet) {
             if (!style_sheet.disabled())
-                callback(style_sheet);
+                callback(style_sheet, {});
         });
     }
+
+    for_each_shadow_root([&](auto& shadow_root) {
+        shadow_root.for_each_css_style_sheet([&](auto& style_sheet) {
+            if (!style_sheet.disabled())
+                callback(style_sheet, &shadow_root);
+        });
+    });
 }
 
 static Optional<CSS::CSSStyleSheet&> find_style_sheet_with_url(String const& url, CSS::CSSStyleSheet& style_sheet)
@@ -5258,6 +5286,12 @@ void Document::for_each_shadow_root(Function<void(DOM::ShadowRoot&)>&& callback)
         callback(shadow_root);
 }
 
+void Document::for_each_shadow_root(Function<void(DOM::ShadowRoot&)>&& callback) const
+{
+    for (auto& shadow_root : m_shadow_roots)
+        callback(shadow_root);
+}
+
 bool Document::is_decoded_svg() const
 {
     return is<Web::SVG::SVGDecodedImageData::SVGPageClient>(page().client());
@@ -5337,11 +5371,11 @@ void Document::set_needs_to_refresh_scroll_state(bool b)
 
 Vector<JS::Handle<DOM::Range>> Document::find_matching_text(String const& query, CaseSensitivity case_sensitivity)
 {
-    if (!layout_node())
-        return {};
-
     // Ensure the layout tree exists before searching for text matches.
     update_layout();
+
+    if (!layout_node())
+        return {};
 
     auto const& text_blocks = layout_node()->text_blocks();
     if (text_blocks.is_empty())
@@ -5408,8 +5442,7 @@ void Document::parse_html_from_a_string(StringView html)
     auto parser = HTML::HTMLParser::create(*this, html, "UTF-8"sv);
 
     // 4. Start parser and let it run until it has consumed all the characters just inserted into the input stream.
-    // FIXME: This is to match the default URL. Instead, pass in this's relevant global object's associated Document's URL.
-    parser->run("about:blank"sv);
+    parser->run(verify_cast<HTML::Window>(HTML::relevant_global_object(*this)).associated_document().url());
 }
 
 // https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#dom-parsehtmlunsafe
@@ -5593,17 +5626,7 @@ RefPtr<Painting::DisplayList> Document::record_display_list(PaintConfig config)
     viewport_paintable.paint_all_phases(context);
 
     display_list->set_device_pixels_per_css_pixel(page().client().device_pixels_per_css_pixel());
-
-    Vector<RefPtr<Painting::ScrollFrame>> scroll_state;
-    scroll_state.resize(viewport_paintable.scroll_state.size() + viewport_paintable.sticky_state.size());
-    for (auto& [_, scrollable_frame] : viewport_paintable.scroll_state) {
-        scroll_state[scrollable_frame->id()] = scrollable_frame;
-    }
-    for (auto& [_, scrollable_frame] : viewport_paintable.sticky_state) {
-        scroll_state[scrollable_frame->id()] = scrollable_frame;
-    }
-
-    display_list->set_scroll_state(move(scroll_state));
+    display_list->set_scroll_state(viewport_paintable.scroll_state());
 
     m_needs_repaint = false;
 
@@ -5625,6 +5648,76 @@ Unicode::Segmenter& Document::word_segmenter() const
     if (!m_word_segmenter)
         m_word_segmenter = Unicode::Segmenter::create(Unicode::SegmenterGranularity::Word);
     return *m_word_segmenter;
+}
+
+// https://html.spec.whatwg.org/multipage/browsing-the-web.html#steps-to-fire-beforeunload
+Document::StepsToFireBeforeunloadResult Document::steps_to_fire_beforeunload(bool unload_prompt_shown)
+{
+    // 1. Let unloadPromptCanceled be false.
+    auto unload_prompt_canceled = false;
+
+    // 2. Increase the document's unload counter by 1.
+    m_unload_counter++;
+
+    // 3. Increase document's relevant agent's event loop's termination nesting level by 1.
+    auto& event_loop = *verify_cast<Bindings::WebEngineCustomData>(*HTML::relevant_agent(*this).custom_data()).event_loop;
+    event_loop.increment_termination_nesting_level();
+
+    // 4. Let eventFiringResult be the result of firing an event named beforeunload at document's relevant global object,
+    //    using BeforeUnloadEvent, with the cancelable attribute initialized to true.
+    auto& global_object = HTML::relevant_global_object(*this);
+    auto& window = verify_cast<HTML::Window>(global_object);
+    auto beforeunload_event = BeforeUnloadEvent::create(realm(), HTML::EventNames::beforeunload);
+    beforeunload_event->set_cancelable(true);
+    auto event_firing_result = window.dispatch_event(*beforeunload_event);
+
+    // 5. Decrease document's relevant agent's event loop's termination nesting level by 1.
+    event_loop.decrement_termination_nesting_level();
+
+    // FIXME: 6. If all of the following are true:
+    if (false &&
+        //    - unloadPromptShown is false;
+        !unload_prompt_shown
+        //    - document's active sandboxing flag set does not have its sandboxed modals flag set;
+        && !has_flag(document().active_sandboxing_flag_set(), HTML::SandboxingFlagSet::SandboxedModals)
+        //    - document's relevant global object has sticky activation;
+        && window.has_sticky_activation()
+        //    - eventFiringResult is false, or the returnValue attribute of event is not the empty string; and
+        && (!event_firing_result || !beforeunload_event->return_value().is_empty())
+        //    - FIXME: showing an unload prompt is unlikely to be annoying, deceptive, or pointless
+    ) {
+        // FIXME: 1. Set unloadPromptShown to true.
+        // FIXME: 2. Invoke WebDriver BiDi user prompt opened with document's relevant global object, "beforeunload", and "".
+        // FIXME: 3. Ask the user to confirm that they wish to unload the document, and pause while waiting for the user's response.
+        // FIXME: 4. If the user did not confirm the page navigation, set unloadPromptCanceled to true.
+        // FIXME: 5. Invoke WebDriver BiDi user prompt closed with document's relevant global object and true if unloadPromptCanceled is false or false otherwise.
+    }
+
+    // 7. Decrease document's unload counter by 1.
+    m_unload_counter--;
+
+    // 8. Return (unloadPromptShown, unloadPromptCanceled).
+    return { unload_prompt_shown, unload_prompt_canceled };
+}
+
+WebIDL::CallbackType* Document::onreadystatechange()
+{
+    return event_handler_attribute(HTML::EventNames::readystatechange);
+}
+
+void Document::set_onreadystatechange(WebIDL::CallbackType* value)
+{
+    set_event_handler_attribute(HTML::EventNames::readystatechange, value);
+}
+
+WebIDL::CallbackType* Document::onvisibilitychange()
+{
+    return event_handler_attribute(HTML::EventNames::visibilitychange);
+}
+
+void Document::set_onvisibilitychange(WebIDL::CallbackType* value)
+{
+    set_event_handler_attribute(HTML::EventNames::visibilitychange, value);
 }
 
 }

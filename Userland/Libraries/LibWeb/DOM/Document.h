@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2023, Andreas Kling <kling@serenityos.org>
+ * Copyright (c) 2018-2023, Andreas Kling <andreas@ladybird.org>
  * Copyright (c) 2021-2023, Linus Groh <linusg@serenityos.org>
  * Copyright (c) 2023-2024, Shannon Booth <shannon@serenityos.org>
  *
@@ -18,6 +18,7 @@
 #include <LibCore/Forward.h>
 #include <LibJS/Console.h>
 #include <LibJS/Forward.h>
+#include <LibURL/Origin.h>
 #include <LibURL/URL.h>
 #include <LibUnicode/Forward.h>
 #include <LibWeb/CSS/CSSStyleSheet.h>
@@ -32,7 +33,6 @@
 #include <LibWeb/HTML/History.h>
 #include <LibWeb/HTML/LazyLoadingElement.h>
 #include <LibWeb/HTML/NavigationType.h>
-#include <LibWeb/HTML/Origin.h>
 #include <LibWeb/HTML/SandboxingFlagSet.h>
 #include <LibWeb/HTML/Scripting/Environments.h>
 #include <LibWeb/HTML/VisibilityState.h>
@@ -148,8 +148,8 @@ public:
     String url_string() const { return MUST(m_url.to_string()); }
     String document_uri() const { return url_string(); }
 
-    HTML::Origin origin() const;
-    void set_origin(HTML::Origin const& origin);
+    URL::Origin origin() const;
+    void set_origin(URL::Origin const& origin);
 
     HTML::OpenerPolicy const& opener_policy() const { return m_opener_policy; }
     void set_opener_policy(HTML::OpenerPolicy policy) { m_opener_policy = move(policy); }
@@ -162,7 +162,7 @@ public:
     CSS::StyleSheetList& style_sheets();
     CSS::StyleSheetList const& style_sheets() const;
 
-    void for_each_active_css_style_sheet(Function<void(CSS::CSSStyleSheet&)>&& callback) const;
+    void for_each_active_css_style_sheet(Function<void(CSS::CSSStyleSheet&, JS::GCPtr<DOM::ShadowRoot>)>&& callback) const;
 
     CSS::StyleSheetList* style_sheets_for_bindings() { return &style_sheets(); }
 
@@ -347,6 +347,7 @@ public:
     Element const* target_element() const { return m_target_element.ptr(); }
     void set_target_element(Element*);
 
+    void try_to_scroll_to_the_fragment();
     void scroll_to_the_fragment();
     void scroll_to_the_beginning_of_the_document();
 
@@ -568,6 +569,10 @@ public:
     bool query_command_supported(String const& command);
     String query_command_value(String const& command);
 
+    // https://w3c.github.io/selection-api/#dfn-has-scheduled-selectionchange-event
+    bool has_scheduled_selectionchange_event() const { return m_has_scheduled_selectionchange_event; }
+    void set_scheduled_selectionchange_event(bool value) { m_has_scheduled_selectionchange_event = value; }
+
     bool is_allowed_to_use_feature(PolicyControlledFeature) const;
 
     void did_stop_being_active_document_in_navigable();
@@ -624,7 +629,6 @@ public:
     void append_pending_animation_event(PendingAnimationEvent const&);
     void update_animations_and_send_events(Optional<double> const& timestamp);
     void remove_replaced_animations();
-    void ensure_animation_timer();
 
     Vector<JS::NonnullGCPtr<Animations::Animation>> get_animations();
 
@@ -671,6 +675,7 @@ public:
     void register_shadow_root(Badge<DOM::ShadowRoot>, DOM::ShadowRoot&);
     void unregister_shadow_root(Badge<DOM::ShadowRoot>, DOM::ShadowRoot&);
     void for_each_shadow_root(Function<void(DOM::ShadowRoot&)>&& callback);
+    void for_each_shadow_root(Function<void(DOM::ShadowRoot&)>&& callback) const;
 
     void add_an_element_to_the_top_layer(JS::NonnullGCPtr<Element>);
     void request_an_element_to_be_remove_from_the_top_layer(JS::NonnullGCPtr<Element>);
@@ -725,6 +730,18 @@ public:
 
     Unicode::Segmenter& grapheme_segmenter() const;
     Unicode::Segmenter& word_segmenter() const;
+
+    struct StepsToFireBeforeunloadResult {
+        bool unload_prompt_shown { false };
+        bool unload_prompt_canceled { false };
+    };
+    StepsToFireBeforeunloadResult steps_to_fire_beforeunload(bool unload_prompt_shown);
+
+    [[nodiscard]] WebIDL::CallbackType* onreadystatechange();
+    void set_onreadystatechange(WebIDL::CallbackType*);
+
+    [[nodiscard]] WebIDL::CallbackType* onvisibilitychange();
+    void set_onvisibilitychange(WebIDL::CallbackType*);
 
 protected:
     virtual void initialize(JS::Realm&) override;
@@ -872,7 +889,7 @@ private:
     String m_referrer;
 
     // https://dom.spec.whatwg.org/#concept-document-origin
-    HTML::Origin m_origin;
+    URL::Origin m_origin;
 
     JS::GCPtr<HTMLCollection> m_applets;
     JS::GCPtr<HTMLCollection> m_anchors;
@@ -988,6 +1005,9 @@ private:
 
     // https://dom.spec.whatwg.org/#document-allow-declarative-shadow-roots
     bool m_allow_declarative_shadow_roots { false };
+
+    // https://w3c.github.io/selection-api/#dfn-has-scheduled-selectionchange-event
+    bool m_has_scheduled_selectionchange_event { false };
 
     JS::GCPtr<JS::ConsoleClient> m_console_client;
 

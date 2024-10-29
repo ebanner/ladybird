@@ -1,17 +1,17 @@
 /*
- * Copyright (c) 2020-2021, Andreas Kling <kling@serenityos.org>
+ * Copyright (c) 2020-2021, Andreas Kling <andreas@ladybird.org>
  * Copyright (c) 2023, Sam Atkins <atkinssj@serenityos.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
+#include <LibURL/Origin.h>
 #include <LibWeb/Bindings/HTMLIFrameElementPrototype.h>
 #include <LibWeb/DOM/Document.h>
 #include <LibWeb/DOM/Event.h>
 #include <LibWeb/HTML/BrowsingContext.h>
 #include <LibWeb/HTML/HTMLIFrameElement.h>
 #include <LibWeb/HTML/Navigable.h>
-#include <LibWeb/HTML/Origin.h>
 #include <LibWeb/HTML/Parser/HTMLParser.h>
 #include <LibWeb/Layout/FrameBox.h>
 
@@ -76,12 +76,6 @@ void HTMLIFrameElement::process_the_iframe_attributes(bool initial_insertion)
 {
     if (!content_navigable())
         return;
-
-    // Make sure applying of history step caused by potential sync navigation to "about:blank"
-    // is finished. Otherwise, it might interrupt navigation caused by changing src or srcdoc.
-    if (!initial_insertion && !content_navigable_initialized()) {
-        main_thread_event_loop().spin_processing_tasks_with_source_until(Task::Source::NavigationAndTraversal, [this] { return content_navigable_initialized(); });
-    }
 
     // 1. If element's srcdoc attribute is specified, then:
     if (has_attribute(HTML::AttributeNames::srcdoc)) {

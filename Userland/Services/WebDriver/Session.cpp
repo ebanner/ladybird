@@ -3,7 +3,7 @@
  * Copyright (c) 2022, Sam Atkins <atkinssj@serenityos.org>
  * Copyright (c) 2022, Tobias Christiansen <tobyase@serenityos.org>
  * Copyright (c) 2022, Linus Groh <linusg@serenityos.org>
- * Copyright (c) 2022, Tim Flynn <trflynn89@serenityos.org>
+ * Copyright (c) 2022-2024, Tim Flynn <trflynn89@ladybird.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  */
@@ -73,7 +73,14 @@ ErrorOr<NonnullRefPtr<Core::LocalServer>> Session::create_server(NonnullRefPtr<S
         dbgln("WebDriver is connected to WebContent socket");
         auto web_content_connection = maybe_connection.release_value();
 
-        auto window_handle = web_content_connection->get_window_handle();
+        auto maybe_window_handle = web_content_connection->get_window_handle();
+        if (maybe_window_handle.is_error()) {
+            promise->reject(Error::from_string_literal("Window was closed immediately"));
+            return;
+        }
+
+        auto window_handle = MUST(String::from_byte_string(maybe_window_handle.value().as_string()));
+
         web_content_connection->on_close = [this, window_handle]() {
             dbgln_if(WEBDRIVER_DEBUG, "Window {} was closed remotely.", window_handle);
             m_windows.remove(window_handle);
@@ -176,29 +183,55 @@ ErrorOr<void, Web::WebDriver::Error> Session::ensure_current_window_handle_is_va
     return Web::WebDriver::Error::from_code(Web::WebDriver::ErrorCode::NoSuchWindow, "Window not found"sv);
 }
 
-Web::WebDriver::Response Session::execute_script(JsonValue payload, ScriptMode mode) const
+template<typename Handler, typename Action>
+static Web::WebDriver::Response perform_async_action(Handler& handler, Action&& action)
 {
-    ScopeGuard guard { [&]() { web_content_connection().on_script_executed = nullptr; } };
-
     Optional<Web::WebDriver::Response> response;
-    web_content_connection().on_script_executed = [&](auto result) {
-        response = move(result);
-    };
 
-    switch (mode) {
-    case ScriptMode::Sync:
-        TRY(web_content_connection().execute_script(move(payload)));
-        break;
-    case ScriptMode::Async:
-        TRY(web_content_connection().execute_async_script(move(payload)));
-        break;
-    }
+    ScopeGuard guard { [&]() { handler = nullptr; } };
+    handler = [&](auto result) { response = move(result); };
+
+    TRY(action());
 
     Core::EventLoop::current().spin_until([&]() {
         return response.has_value();
     });
 
     return response.release_value();
+}
+
+Web::WebDriver::Response Session::execute_script(JsonValue payload, ScriptMode mode) const
+{
+    return perform_async_action(web_content_connection().on_script_executed, [&]() {
+        switch (mode) {
+        case ScriptMode::Sync:
+            return web_content_connection().execute_script(move(payload));
+        case ScriptMode::Async:
+            return web_content_connection().execute_async_script(move(payload));
+        }
+        VERIFY_NOT_REACHED();
+    });
+}
+
+Web::WebDriver::Response Session::element_click(String element_id) const
+{
+    return perform_async_action(web_content_connection().on_actions_performed, [&]() {
+        return web_content_connection().element_click(move(element_id));
+    });
+}
+
+Web::WebDriver::Response Session::element_send_keys(String element_id, JsonValue payload) const
+{
+    return perform_async_action(web_content_connection().on_actions_performed, [&]() {
+        return web_content_connection().element_send_keys(move(element_id), move(payload));
+    });
+}
+
+Web::WebDriver::Response Session::perform_actions(JsonValue payload) const
+{
+    return perform_async_action(web_content_connection().on_actions_performed, [&]() {
+        return web_content_connection().perform_actions(move(payload));
+    });
 }
 
 }

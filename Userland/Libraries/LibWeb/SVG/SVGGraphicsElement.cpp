@@ -2,7 +2,7 @@
  * Copyright (c) 2020, Matthew Olsson <mattco@serenityos.org>
  * Copyright (c) 2021-2022, Sam Atkins <atkinssj@serenityos.org>
  * Copyright (c) 2023, MacDue <macdue@dueutil.tech>
- * Copyright (c) 2023, Andreas Kling <kling@serenityos.org>
+ * Copyright (c) 2023, Andreas Kling <andreas@ladybird.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  */
@@ -232,6 +232,13 @@ Optional<float> SVGGraphicsElement::fill_opacity() const
     if (!layout_node())
         return {};
     return layout_node()->computed_values().fill_opacity();
+}
+
+Optional<CSS::StrokeLinecap> SVGGraphicsElement::stroke_linecap() const
+{
+    if (!layout_node())
+        return {};
+    return layout_node()->computed_values().stroke_linecap();
 }
 
 Optional<float> SVGGraphicsElement::stroke_opacity() const

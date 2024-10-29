@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2022, Andreas Kling <kling@serenityos.org>
+ * Copyright (c) 2018-2022, Andreas Kling <andreas@ladybird.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  */
@@ -15,10 +15,10 @@
 #include <LibGfx/Size.h>
 #include <LibJS/Forward.h>
 #include <LibJS/Heap/Cell.h>
+#include <LibURL/Origin.h>
 #include <LibWeb/DOM/Position.h>
 #include <LibWeb/HTML/ActivateTab.h>
 #include <LibWeb/HTML/NavigableContainer.h>
-#include <LibWeb/HTML/Origin.h>
 #include <LibWeb/HTML/SandboxingFlagSet.h>
 #include <LibWeb/HTML/SessionHistoryEntry.h>
 #include <LibWeb/HTML/TokenizedFeatures.h>
@@ -96,6 +96,7 @@ public:
     }
 
     bool is_top_level() const;
+    bool is_auxiliary() const { return m_is_auxiliary; }
 
     DOM::Document const* active_document() const;
     DOM::Document* active_document();
@@ -145,7 +146,7 @@ private:
     JS::GCPtr<BrowsingContext> m_opener_browsing_context;
 
     // https://html.spec.whatwg.org/multipage/document-sequences.html#opener-origin-at-creation
-    Optional<HTML::Origin> m_opener_origin_at_creation;
+    Optional<URL::Origin> m_opener_origin_at_creation;
 
     // https://html.spec.whatwg.org/multipage/browsers.html#is-popup
     TokenizedFeature::Popup m_is_popup { TokenizedFeature::Popup::No };
@@ -168,7 +169,7 @@ private:
     JS::GCPtr<BrowsingContext> m_previous_sibling;
 };
 
-HTML::Origin determine_the_origin(Optional<URL::URL> const&, SandboxingFlagSet, Optional<HTML::Origin> source_origin);
+URL::Origin determine_the_origin(Optional<URL::URL> const&, SandboxingFlagSet, Optional<URL::Origin> source_origin);
 
 SandboxingFlagSet determine_the_creation_sandboxing_flags(BrowsingContext const&, JS::GCPtr<DOM::Element> embedder);
 

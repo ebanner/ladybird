@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2023, Andreas Kling <kling@serenityos.org>
+ * Copyright (c) 2018-2023, Andreas Kling <andreas@ladybird.org>
  * Copyright (c) 2022, Dex♪ <dexes.ttp@gmail.com>
  *
  * SPDX-License-Identifier: BSD-2-Clause
@@ -8,9 +8,11 @@
 #include <AK/Debug.h>
 #include <LibCore/DateTime.h>
 #include <LibCore/Directory.h>
-#include <LibCore/ElapsedTimer.h>
 #include <LibCore/MimeData.h>
 #include <LibCore/Resource.h>
+#include <LibHTTP/HttpResponse.h>
+#include <LibRequests/Request.h>
+#include <LibRequests/RequestClient.h>
 #include <LibWeb/Cookie/Cookie.h>
 #include <LibWeb/Cookie/ParsedCookie.h>
 #include <LibWeb/Fetch/Infrastructure/URL.h>
@@ -20,25 +22,17 @@
 #include <LibWeb/Loader/ProxyMappings.h>
 #include <LibWeb/Loader/Resource.h>
 #include <LibWeb/Loader/ResourceLoader.h>
+#include <LibWeb/Page/Page.h>
 #include <LibWeb/Platform/EventLoopPlugin.h>
 #include <LibWeb/Platform/Timer.h>
 
 namespace Web {
 
-ResourceLoaderConnectorRequest::ResourceLoaderConnectorRequest() = default;
-
-ResourceLoaderConnectorRequest::~ResourceLoaderConnectorRequest() = default;
-
-ResourceLoaderConnector::ResourceLoaderConnector() = default;
-
-ResourceLoaderConnector::~ResourceLoaderConnector() = default;
-
 static RefPtr<ResourceLoader> s_resource_loader;
 
-void ResourceLoader::initialize(RefPtr<ResourceLoaderConnector> connector)
+void ResourceLoader::initialize(NonnullRefPtr<Requests::RequestClient> request_client)
 {
-    if (connector)
-        s_resource_loader = ResourceLoader::try_create(connector.release_nonnull()).release_value_but_fixme_should_propagate_errors();
+    s_resource_loader = adopt_ref(*new ResourceLoader(move(request_client)));
 }
 
 ResourceLoader& ResourceLoader::the()
@@ -50,13 +44,8 @@ ResourceLoader& ResourceLoader::the()
     return *s_resource_loader;
 }
 
-ErrorOr<NonnullRefPtr<ResourceLoader>> ResourceLoader::try_create(NonnullRefPtr<ResourceLoaderConnector> connector)
-{
-    return adopt_nonnull_ref_or_enomem(new (nothrow) ResourceLoader(move(connector)));
-}
-
-ResourceLoader::ResourceLoader(NonnullRefPtr<ResourceLoaderConnector> connector)
-    : m_connector(move(connector))
+ResourceLoader::ResourceLoader(NonnullRefPtr<Requests::RequestClient> request_client)
+    : m_request_client(move(request_client))
     , m_user_agent(MUST(String::from_utf8(default_user_agent)))
     , m_platform(MUST(String::from_utf8(default_platform)))
     , m_preferred_languages({ "en-US"_string })
@@ -74,7 +63,7 @@ void ResourceLoader::prefetch_dns(URL::URL const& url)
         return;
     }
 
-    m_connector->prefetch_dns(url);
+    m_request_client->ensure_connection(url, RequestServer::CacheLevel::ResolveOnly);
 }
 
 void ResourceLoader::preconnect(URL::URL const& url)
@@ -87,7 +76,7 @@ void ResourceLoader::preconnect(URL::URL const& url)
         return;
     }
 
-    m_connector->preconnect(url);
+    m_request_client->ensure_connection(url, RequestServer::CacheLevel::CreateConnection);
 }
 
 static HashMap<LoadRequest, NonnullRefPtr<Resource>> s_resource_cache;
@@ -190,6 +179,30 @@ static void log_filtered_request(LoadRequest const& request)
     dbgln("ResourceLoader: Filtered request to: \"{}\"", url_for_logging);
 }
 
+static StringView network_error_to_string_view(Requests::NetworkError const& network_error)
+{
+    switch (network_error) {
+    case Requests::NetworkError::UnableToResolveProxy:
+        return "Unable to resolve proxy"sv;
+    case Requests::NetworkError::UnableToResolveHost:
+        return "Unable to resolve host"sv;
+    case Requests::NetworkError::UnableToConnect:
+        return "Unable to connect"sv;
+    case Requests::NetworkError::TimeoutReached:
+        return "Timeout reached"sv;
+    case Requests::NetworkError::TooManyRedirects:
+        return "Too many redirects"sv;
+    case Requests::NetworkError::SSLHandshakeFailed:
+        return "SSL handshake failed"sv;
+    case Requests::NetworkError::SSLVerificationFailed:
+        return "SSL verification failed"sv;
+    case Requests::NetworkError::MalformedUrl:
+        return "The URL is not formatted properly"sv;
+    default:
+        return "An unexpected network error occurred"sv;
+    }
+}
+
 static bool should_block_request(LoadRequest const& request)
 {
     auto const& url = request.url();
@@ -281,11 +294,11 @@ void ResourceLoader::load(LoadRequest& request, SuccessCallback success_callback
         auto data_url = data_url_or_error.release_value();
 
         dbgln_if(SPAM_DEBUG, "ResourceLoader loading a data URL with mime-type: '{}', payload='{}'",
-            MUST(data_url.mime_type.serialized()),
+            data_url.mime_type.serialized(),
             StringView(data_url.body.bytes()));
 
         HTTP::HeaderMap response_headers;
-        response_headers.set("Content-Type", MUST(data_url.mime_type.serialized()).to_byte_string());
+        response_headers.set("Content-Type", data_url.mime_type.serialized().to_byte_string());
 
         log_success(request);
 
@@ -409,16 +422,20 @@ void ResourceLoader::load(LoadRequest& request, SuccessCallback success_callback
             timer->start();
         }
 
-        auto on_buffered_request_finished = [this, success_callback = move(success_callback), error_callback = move(error_callback), request, &protocol_request = *protocol_request](bool success, auto, auto& response_headers, auto status_code, ReadonlyBytes payload) mutable {
+        auto on_buffered_request_finished = [this, success_callback = move(success_callback), error_callback = move(error_callback), request, &protocol_request = *protocol_request](auto, auto const& network_error, auto& response_headers, auto status_code, ReadonlyBytes payload) mutable {
             handle_network_response_headers(request, response_headers);
             finish_network_request(protocol_request);
 
-            if (!success || (status_code.has_value() && *status_code >= 400 && *status_code <= 599 && (payload.is_empty() || !request.is_main_resource()))) {
+            if (network_error.has_value() || (status_code.has_value() && *status_code >= 400 && *status_code <= 599 && (payload.is_empty() || !request.is_main_resource()))) {
                 StringBuilder error_builder;
-                if (status_code.has_value())
-                    error_builder.appendff("Load failed: {}", *status_code);
+                if (network_error.has_value())
+                    error_builder.appendff("{}", network_error_to_string_view(*network_error));
                 else
                     error_builder.append("Load failed"sv);
+
+                if (status_code.has_value() && *status_code > 0)
+                    error_builder.appendff(" (status: {} {})", *status_code, HTTP::HttpResponse::reason_phrase_for_code(*status_code));
+
                 log_failure(request, error_builder.string_view());
                 if (error_callback)
                     error_callback(error_builder.to_byte_string(), status_code, payload, response_headers);
@@ -472,10 +489,10 @@ void ResourceLoader::load_unbuffered(LoadRequest& request, OnHeadersReceived on_
         on_data_received(data);
     };
 
-    auto protocol_complete = [this, on_complete = move(on_complete), request, &protocol_request = *protocol_request](bool success, u64) {
+    auto protocol_complete = [this, on_complete = move(on_complete), request, &protocol_request = *protocol_request](u64, Optional<Requests::NetworkError> const& network_error) {
         finish_network_request(protocol_request);
 
-        if (success) {
+        if (!network_error.has_value()) {
             log_success(request);
             on_complete(true, {});
         } else {
@@ -487,7 +504,7 @@ void ResourceLoader::load_unbuffered(LoadRequest& request, OnHeadersReceived on_
     protocol_request->set_unbuffered_request_callbacks(move(protocol_headers_received), move(protocol_data_received), move(protocol_complete));
 }
 
-RefPtr<ResourceLoaderConnectorRequest> ResourceLoader::start_network_request(LoadRequest const& request)
+RefPtr<Requests::Request> ResourceLoader::start_network_request(LoadRequest const& request)
 {
     auto proxy = ProxyMappings::the().proxy_for_url(request.url());
 
@@ -500,13 +517,13 @@ RefPtr<ResourceLoaderConnectorRequest> ResourceLoader::start_network_request(Loa
     if (!headers.contains("User-Agent"))
         headers.set("User-Agent", m_user_agent.to_byte_string());
 
-    auto protocol_request = m_connector->start_request(request.method(), request.url(), headers, request.body(), proxy);
+    auto protocol_request = m_request_client->start_request(request.method(), request.url(), headers, request.body(), proxy);
     if (!protocol_request) {
         log_failure(request, "Failed to initiate load"sv);
         return nullptr;
     }
 
-    protocol_request->on_certificate_requested = []() -> ResourceLoaderConnectorRequest::CertificateAndKey {
+    protocol_request->on_certificate_requested = []() -> Requests::Request::CertificateAndKey {
         return {};
     };
 
@@ -535,7 +552,7 @@ void ResourceLoader::handle_network_response_headers(LoadRequest const& request,
     }
 }
 
-void ResourceLoader::finish_network_request(NonnullRefPtr<ResourceLoaderConnectorRequest> const& protocol_request)
+void ResourceLoader::finish_network_request(NonnullRefPtr<Requests::Request> const& protocol_request)
 {
     --m_pending_loads;
     if (on_load_counter_change)

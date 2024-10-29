@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2023, Andreas Kling <kling@serenityos.org>
+ * Copyright (c) 2020-2023, Andreas Kling <andreas@ladybird.org>
  * Copyright (c) 2021-2022, Sam Atkins <atkinssj@serenityos.org>
  * Copyright (c) 2021-2023, Linus Groh <linusg@serenityos.org>
  *
@@ -17,6 +17,7 @@
 #include <LibJS/Runtime/NativeFunction.h>
 #include <LibJS/Runtime/Shape.h>
 #include <LibTextCodec/Decoder.h>
+#include <LibURL/Origin.h>
 #include <LibWeb/Bindings/ExceptionOrUtils.h>
 #include <LibWeb/Bindings/WindowExposedInterfaces.h>
 #include <LibWeb/Bindings/WindowPrototype.h>
@@ -43,9 +44,9 @@
 #include <LibWeb/HTML/HTMLObjectElement.h>
 #include <LibWeb/HTML/Location.h>
 #include <LibWeb/HTML/MessageEvent.h>
+#include <LibWeb/HTML/MessagePort.h>
 #include <LibWeb/HTML/Navigation.h>
 #include <LibWeb/HTML/Navigator.h>
-#include <LibWeb/HTML/Origin.h>
 #include <LibWeb/HTML/PageTransitionEvent.h>
 #include <LibWeb/HTML/Parser/HTMLParser.h>
 #include <LibWeb/HTML/Scripting/Environments.h>
@@ -138,11 +139,40 @@ void Window::finalize()
 Window::~Window() = default;
 
 // https://html.spec.whatwg.org/multipage/window-object.html#window-open-steps
-WebIDL::ExceptionOr<JS::GCPtr<WindowProxy>> Window::open_impl(StringView url, StringView target, StringView features)
+WebIDL::ExceptionOr<JS::GCPtr<WindowProxy>> Window::window_open_steps(StringView url, StringView target, StringView features)
+{
+    auto [target_navigable, no_opener, window_type] = TRY(window_open_steps_internal(url, target, features));
+    if (target_navigable == nullptr)
+        return nullptr;
+
+    // 14. If noopener is true or windowType is "new with no opener", then return null.
+    if (no_opener == TokenizedFeature::NoOpener::Yes || window_type == Navigable::WindowType::NewWithNoOpener)
+        return nullptr;
+
+    // 15. Return targetNavigable's active WindowProxy.
+    return target_navigable->active_window_proxy();
+}
+
+// https://html.spec.whatwg.org/multipage/window-object.html#window-open-steps
+WebIDL::ExceptionOr<Window::OpenedWindow> Window::window_open_steps_internal(StringView url, StringView target, StringView features)
 {
     // 1. If the event loop's termination nesting level is nonzero, return null.
     if (main_thread_event_loop().termination_nesting_level() != 0)
-        return nullptr;
+        return OpenedWindow {};
+
+    // FIXME: Spec-issue: https://github.com/whatwg/html/issues/10681
+    // We need to check for an invalid URL before running the 'rules for choosing a navigable' otherwise
+    // and invalid URL will result in a window being created before an exception is thrown.
+    //
+    // 12.3. Let urlRecord be the URL record about:blank.
+    auto url_record = URL::URL("about:blank"sv);
+    // 12.4. If url is not the empty string, then set urlRecord to the result of encoding-parsing a URL given url, relative to the entry settings object.
+    if (!url.is_empty()) {
+        url_record = entry_settings_object().parse_url(url);
+        // 12.5. If urlRecord is failure, then throw a "SyntaxError" DOMException.
+        if (!url_record.is_valid())
+            return WebIDL::SyntaxError::create(realm(), MUST(String::formatted("Invalid URL '{}'", url)));
+    }
 
     // 2. Let sourceDocument be the entry global object's associated Document.
     auto& source_document = verify_cast<Window>(entry_global_object()).associated_document();
@@ -191,7 +221,7 @@ WebIDL::ExceptionOr<JS::GCPtr<WindowProxy>> Window::open_impl(StringView url, St
 
     // 11. If targetNavigable is null, then return null.
     if (target_navigable == nullptr)
-        return nullptr;
+        return OpenedWindow {};
 
     // 12. If windowType is either "new and unrestricted" or "new with no opener", then:
     if (window_type == Navigable::WindowType::NewAndUnrestricted || window_type == Navigable::WindowType::NewWithNoOpener) {
@@ -201,16 +231,10 @@ WebIDL::ExceptionOr<JS::GCPtr<WindowProxy>> Window::open_impl(StringView url, St
         // 2. Set up browsing context features for target browsing context given tokenizedFeatures. [CSSOMVIEW]
         // NOTE: This is implemented in choose_a_navigable when creating the top level traversable.
 
+        // NOTE: See spec issue above
         // 3. Let urlRecord be the URL record about:blank.
-        auto url_record = URL::URL("about:blank"sv);
-
         // 4. If url is not the empty string, then set urlRecord to the result of encoding-parsing a URL given url, relative to the entry settings object.
-        if (!url.is_empty()) {
-            url_record = entry_settings_object().parse_url(url);
-            // 5. If urlRecord is failure, then throw a "SyntaxError" DOMException.
-            if (!url_record.is_valid())
-                return WebIDL::SyntaxError::create(realm(), "URL is not valid"_fly_string);
-        }
+        // 5. If urlRecord is failure, then throw a "SyntaxError" DOMException.
 
         // 6. If urlRecord matches about:blank, then perform the URL and history update steps given targetNavigable's active document and urlRecord.
         if (url_matches_about_blank(url_record)) {
@@ -231,12 +255,9 @@ WebIDL::ExceptionOr<JS::GCPtr<WindowProxy>> Window::open_impl(StringView url, St
     else {
         // 1. If url is not the empty string, then:
         if (!url.is_empty()) {
+            // NOTE: See spec issue above
             // 1. Let urlRecord be the result of encoding-parsing a URL url, relative to the entry settings object.
-            auto url_record = entry_settings_object().parse_url(url);
-
             // 2. If urlRecord is failure, then throw a "SyntaxError" DOMException.
-            if (!url_record.is_valid())
-                return WebIDL::SyntaxError::create(realm(), "URL is not valid"_fly_string);
 
             // 3. Navigate targetNavigable to urlRecord using sourceDocument, with referrerPolicy set to referrerPolicy and exceptionsEnabled set to true.
             TRY(target_navigable->navigate({ .url = url_record, .source_document = source_document, .exceptions_enabled = true, .referrer_policy = referrer_policy }));
@@ -247,12 +268,7 @@ WebIDL::ExceptionOr<JS::GCPtr<WindowProxy>> Window::open_impl(StringView url, St
             target_navigable->active_browsing_context()->set_opener_browsing_context(source_document.browsing_context());
     }
 
-    // 14. If noopener is true or windowType is "new with no opener", then return null.
-    if (no_opener == TokenizedFeature::NoOpener::Yes || window_type == Navigable::WindowType::NewWithNoOpener)
-        return nullptr;
-
-    // 15. Return targetNavigable's active WindowProxy.
-    return target_navigable->active_window_proxy();
+    return OpenedWindow { target_navigable, no_opener, window_type };
 }
 
 bool Window::dispatch_event(DOM::Event& event)
@@ -415,7 +431,7 @@ void Window::fire_a_page_transition_event(FlyString const& event_name, bool pers
 WebIDL::ExceptionOr<JS::NonnullGCPtr<Storage>> Window::local_storage()
 {
     // FIXME: Implement according to spec.
-    static HashMap<Origin, JS::Handle<Storage>> local_storage_per_origin;
+    static HashMap<URL::Origin, JS::Handle<Storage>> local_storage_per_origin;
     auto storage = local_storage_per_origin.ensure(associated_document().origin(), [this]() -> JS::Handle<Storage> {
         return Storage::create(realm());
     });
@@ -426,7 +442,7 @@ WebIDL::ExceptionOr<JS::NonnullGCPtr<Storage>> Window::local_storage()
 WebIDL::ExceptionOr<JS::NonnullGCPtr<Storage>> Window::session_storage()
 {
     // FIXME: Implement according to spec.
-    static HashMap<Origin, JS::Handle<Storage>> session_storage_per_origin;
+    static HashMap<URL::Origin, JS::Handle<Storage>> session_storage_per_origin;
     auto storage = session_storage_per_origin.ensure(associated_document().origin(), [this]() -> JS::Handle<Storage> {
         return Storage::create(realm());
     });
@@ -787,15 +803,59 @@ String Window::status() const
 // https://html.spec.whatwg.org/multipage/nav-history-apis.html#dom-window-close
 void Window::close()
 {
-    // FIXME: Implement this properly
-    dbgln("(STUBBED) Window::close()");
+    // 1. Let thisTraversable be this's navigable.
+    auto traversable = navigable();
+
+    // 2. If thisTraversable is not a top-level traversable, then return.
+    if (!traversable || !traversable->is_top_level_traversable())
+        return;
+
+    // 3. If thisTraversable's is closing is true, then return.
+    if (traversable->is_closing())
+        return;
+
+    // 4. Let browsingContext be thisTraversable's active browsing context.
+    auto browsing_context = traversable->active_browsing_context();
+
+    // 5. Let sourceSnapshotParams be the result of snapshotting source snapshot params given thisTraversable's active document.
+    auto source_snapshot_params = traversable->active_document()->snapshot_source_snapshot_params();
+
+    auto& incumbent_global_object = verify_cast<HTML::Window>(HTML::incumbent_global_object());
+
+    // 6. If all the following are true:
+    if (
+        // thisTraversable is script-closable;
+        traversable->is_script_closable()
+
+        // the incumbent global object's browsing context is familiar with browsingContext; and
+        && incumbent_global_object.browsing_context()->is_familiar_with(*browsing_context)
+
+        // the incumbent global object's navigable is allowed by sandboxing to navigate thisTraversable, given sourceSnapshotParams,
+        && incumbent_global_object.navigable()->allowed_by_sandboxing_to_navigate(*traversable, source_snapshot_params))
+    // then:
+    {
+        // 1. Set thisTraversable's is closing to true.
+        traversable->set_closing(true);
+
+        // 2. Queue a task on the DOM manipulation task source to definitely close thisTraversable.
+        HTML::queue_global_task(HTML::Task::Source::DOMManipulation, incumbent_global_object, JS::create_heap_function(heap(), [traversable] {
+            verify_cast<TraversableNavigable>(*traversable).definitely_close_top_level_traversable();
+        }));
+    }
 }
 
 // https://html.spec.whatwg.org/multipage/nav-history-apis.html#dom-window-closed
 bool Window::closed() const
 {
-    // FIXME: Implement this properly
-    dbgln("(STUBBED) Window::closed");
+    // The closed getter steps are to return true if this's browsing context is null or its is closing is true;
+    // otherwise false.
+    if (!browsing_context())
+        return true;
+
+    // FIXME: The spec seems a bit out of date. The `is closing` flag is on the navigable, not the browsing context.
+    if (auto navigable = this->navigable(); !navigable || navigable->is_closing())
+        return true;
+
     return false;
 }
 
@@ -957,7 +1017,7 @@ JS::GCPtr<DOM::Element const> Window::frame_element() const
 WebIDL::ExceptionOr<JS::GCPtr<WindowProxy>> Window::open(Optional<String> const& url, Optional<String> const& target, Optional<String> const& features)
 {
     // The open(url, target, features) method steps are to run the window open steps with url, target, and features.
-    return open_impl(*url, *target, *features);
+    return window_open_steps(*url, *target, *features);
 }
 
 // https://html.spec.whatwg.org/multipage/system-state.html#dom-navigator
@@ -1017,7 +1077,7 @@ WebIDL::ExceptionOr<void> Window::window_post_message_steps(JS::Value message, W
     auto& incumbent_settings = incumbent_settings_object();
 
     // 3. Let targetOrigin be options["targetOrigin"].
-    Variant<String, Origin> target_origin = options.target_origin;
+    Variant<String, URL::Origin> target_origin = options.target_origin;
 
     // 4. If targetOrigin is a single U+002F SOLIDUS character (/), then set targetOrigin to incumbentSettings's origin.
     if (options.target_origin == "/"sv) {
@@ -1033,7 +1093,7 @@ WebIDL::ExceptionOr<void> Window::window_post_message_steps(JS::Value message, W
             return WebIDL::SyntaxError::create(target_realm, MUST(String::formatted("Invalid URL for targetOrigin: '{}'", options.target_origin)));
 
         // 3. Set targetOrigin to parsedURL's origin.
-        target_origin = DOMURL::url_origin(parsed_url);
+        target_origin = parsed_url.origin();
     }
 
     // 6. Let transfer be options["transfer"].
@@ -1048,7 +1108,7 @@ WebIDL::ExceptionOr<void> Window::window_post_message_steps(JS::Value message, W
         //    associated Document's origin is not same origin with targetOrigin, then return.
         // NOTE: Due to step 4 and 5 above, the only time it's not '*' is if target_origin contains an Origin.
         if (!target_origin.has<String>()) {
-            auto const& actual_target_origin = target_origin.get<Origin>();
+            auto const& actual_target_origin = target_origin.get<URL::Origin>();
             if (!document()->origin().is_same_origin(actual_target_origin))
                 return;
         }

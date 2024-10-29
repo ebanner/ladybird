@@ -1,10 +1,11 @@
 /*
- * Copyright (c) 2020-2021, Andreas Kling <kling@serenityos.org>
+ * Copyright (c) 2020-2021, Andreas Kling <andreas@ladybird.org>
  * Copyright (c) 2021, Max Wipfli <mail@maxwipfli.ch>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
+#include <LibUnicode/CharacterTypes.h>
 #include <LibUnicode/Segmenter.h>
 #include <LibWeb/DOM/Range.h>
 #include <LibWeb/DOM/Text.h>
@@ -135,7 +136,7 @@ static Gfx::StandardCursor cursor_css_to_gfx(Optional<CSS::Cursor> cursor)
 
 static CSSPixelPoint compute_mouse_event_offset(CSSPixelPoint position, Layout::Node const& layout_node)
 {
-    auto top_left_of_layout_node = layout_node.paintable()->box_type_agnostic_position();
+    auto top_left_of_layout_node = layout_node.first_paintable()->box_type_agnostic_position();
     return {
         position.x() - top_left_of_layout_node.x(),
         position.y() - top_left_of_layout_node.y()
@@ -762,20 +763,31 @@ bool EventHandler::focus_next_element()
     if (!m_navigable->active_document()->is_fully_active())
         return false;
 
-    auto* element = m_navigable->active_document()->focused_element();
-    if (!element) {
-        element = m_navigable->active_document()->first_child_of_type<DOM::Element>();
-        if (element && element->is_focusable()) {
-            m_navigable->active_document()->set_focused_element(element);
-            return true;
+    auto set_focus_to_first_focusable_element = [&]() {
+        auto* element = m_navigable->active_document()->first_child_of_type<DOM::Element>();
+
+        for (; element; element = element->next_element_in_pre_order()) {
+            if (element->is_focusable()) {
+                m_navigable->active_document()->set_focused_element(element);
+                return true;
+            }
         }
-    }
+
+        return false;
+    };
+
+    auto* element = m_navigable->active_document()->focused_element();
+    if (!element)
+        return set_focus_to_first_focusable_element();
 
     for (element = element->next_element_in_pre_order(); element && !element->is_focusable(); element = element->next_element_in_pre_order())
         ;
 
+    if (!element)
+        return set_focus_to_first_focusable_element();
+
     m_navigable->active_document()->set_focused_element(element);
-    return element;
+    return true;
 }
 
 bool EventHandler::focus_previous_element()
@@ -785,20 +797,32 @@ bool EventHandler::focus_previous_element()
     if (!m_navigable->active_document()->is_fully_active())
         return false;
 
-    auto* element = m_navigable->active_document()->focused_element();
-    if (!element) {
-        element = m_navigable->active_document()->last_child_of_type<DOM::Element>();
-        if (element && element->is_focusable()) {
-            m_navigable->active_document()->set_focused_element(element);
-            return true;
+    auto set_focus_to_last_focusable_element = [&]() {
+        // FIXME: This often returns the HTML element itself, which has no previous sibling.
+        auto* element = m_navigable->active_document()->last_child_of_type<DOM::Element>();
+
+        for (; element; element = element->previous_element_in_pre_order()) {
+            if (element->is_focusable()) {
+                m_navigable->active_document()->set_focused_element(element);
+                return true;
+            }
         }
-    }
+
+        return false;
+    };
+
+    auto* element = m_navigable->active_document()->focused_element();
+    if (!element)
+        return set_focus_to_last_focusable_element();
 
     for (element = element->previous_element_in_pre_order(); element && !element->is_focusable(); element = element->previous_element_in_pre_order())
         ;
 
+    if (!element)
+        return set_focus_to_last_focusable_element();
+
     m_navigable->active_document()->set_focused_element(element);
-    return element;
+    return true;
 }
 
 constexpr bool should_ignore_keydown_event(u32 code_point, u32 modifiers)
@@ -836,6 +860,18 @@ EventResult EventHandler::fire_keyboard_event(FlyString const& event_name, HTML:
     return target->dispatch_event(event) ? EventResult::Accepted : EventResult::Cancelled;
 }
 
+// https://w3c.github.io/uievents/#unicode-character-categories
+static bool produces_character_value(u32 code_point)
+{
+    // A subset of the General Category values that are defined for each Unicode code point. This subset contains all
+    // the Letter (Ll, Lm, Lo, Lt, Lu), Number (Nd, Nl, No), Punctuation (Pc, Pd, Pe, Pf, Pi, Po, Ps) and Symbol (Sc,
+    // Sk, Sm, So) category values.
+    return Unicode::code_point_has_letter_general_category(code_point)
+        || Unicode::code_point_has_number_general_category(code_point)
+        || Unicode::code_point_has_punctuation_general_category(code_point)
+        || Unicode::code_point_has_symbol_general_category(code_point);
+}
+
 EventResult EventHandler::handle_keydown(UIEvents::KeyCode key, u32 modifiers, u32 code_point)
 {
     if (!m_navigable->active_document())
@@ -843,9 +879,20 @@ EventResult EventHandler::handle_keydown(UIEvents::KeyCode key, u32 modifiers, u
     if (!m_navigable->active_document()->is_fully_active())
         return EventResult::Dropped;
 
+    auto dispatch_result = fire_keyboard_event(UIEvents::EventNames::keydown, m_navigable, key, modifiers, code_point);
+    if (dispatch_result != EventResult::Accepted)
+        return dispatch_result;
+
+    // https://w3c.github.io/uievents/#event-type-keypress
+    // If supported by a user agent, this event MUST be dispatched when a key is pressed down, if and only if that key
+    // normally produces a character value.
+    if (produces_character_value(code_point)) {
+        dispatch_result = fire_keyboard_event(UIEvents::EventNames::keypress, m_navigable, key, modifiers, code_point);
+        if (dispatch_result != EventResult::Accepted)
+            return dispatch_result;
+    }
+
     JS::NonnullGCPtr<DOM::Document> document = *m_navigable->active_document();
-    if (!document->layout_node())
-        return EventResult::Dropped;
 
     if (key == UIEvents::KeyCode::Key_Tab) {
         if (modifiers & UIEvents::KeyModifier::Mod_Shift)
@@ -906,10 +953,6 @@ EventResult EventHandler::handle_keydown(UIEvents::KeyCode key, u32 modifiers, u
         if (media_element.handle_keydown({}, key, modifiers).release_value_but_fixme_should_propagate_errors())
             return EventResult::Handled;
     }
-
-    auto dispatch_result = fire_keyboard_event(UIEvents::EventNames::keydown, m_navigable, key, modifiers, code_point);
-    if (dispatch_result != EventResult::Accepted)
-        return dispatch_result;
 
     if (document->cursor_position()) {
         auto& node = *document->cursor_position()->node();
@@ -1052,7 +1095,7 @@ EventResult EventHandler::handle_keydown(UIEvents::KeyCode key, u32 modifiers, u
         return EventResult::Handled;
     case UIEvents::KeyCode::Key_Left:
     case UIEvents::KeyCode::Key_Right:
-        if (modifiers > UIEvents::KeyModifier::Mod_Alt && modifiers != (UIEvents::KeyModifier::Mod_Alt | UIEvents::KeyModifier::Mod_AltGr))
+        if (modifiers && modifiers != UIEvents::KeyModifier::Mod_Alt)
             break;
         if (modifiers)
             document->page().traverse_the_history_by_delta(key == UIEvents::KeyCode::Key_Left ? -1 : 1);
@@ -1061,7 +1104,7 @@ EventResult EventHandler::handle_keydown(UIEvents::KeyCode key, u32 modifiers, u
         return EventResult::Handled;
     case UIEvents::KeyCode::Key_PageUp:
     case UIEvents::KeyCode::Key_PageDown:
-        if (modifiers > UIEvents::KeyModifier::Mod_None)
+        if (modifiers != UIEvents::KeyModifier::Mod_None)
             break;
         document->window()->scroll_by(0, key == UIEvents::KeyCode::Key_PageUp ? -page_scroll_distance : page_scroll_distance);
         return EventResult::Handled;
@@ -1075,8 +1118,7 @@ EventResult EventHandler::handle_keydown(UIEvents::KeyCode key, u32 modifiers, u
         break;
     }
 
-    // FIXME: Work out and implement the difference between this and keydown.
-    return fire_keyboard_event(UIEvents::EventNames::keypress, m_navigable, key, modifiers, code_point);
+    return EventResult::Accepted;
 }
 
 EventResult EventHandler::handle_keyup(UIEvents::KeyCode key, u32 modifiers, u32 code_point)

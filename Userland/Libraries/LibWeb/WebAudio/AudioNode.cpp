@@ -29,7 +29,7 @@ WebIDL::ExceptionOr<JS::NonnullGCPtr<AudioNode>> AudioNode::connect(JS::NonnullG
 
     // If the destination parameter is an AudioNode that has been created using another AudioContext, an InvalidAccessError MUST be thrown.
     if (m_context != destination_node->m_context) {
-        return WebIDL::InvalidAccessError::create(realm(), "Cannot connect to an AudioNode in a different AudioContext"_fly_string);
+        return WebIDL::InvalidAccessError::create(realm(), "Cannot connect to an AudioNode in a different AudioContext"_string);
     }
 
     (void)output;
@@ -98,32 +98,16 @@ void AudioNode::disconnect(JS::NonnullGCPtr<AudioParam> destination_param, WebID
     dbgln("FIXME: Implement AudioNode::disconnect(destination_param, output)");
 }
 
-// https://webaudio.github.io/web-audio-api/#dom-audionode-numberofinputs
-WebIDL::UnsignedLong AudioNode::number_of_inputs()
-{
-    dbgln("FIXME: Implement AudioNode::number_of_inputs()");
-    return 0;
-}
-
-// https://webaudio.github.io/web-audio-api/#dom-audionode-numberofoutputs
-WebIDL::UnsignedLong AudioNode::number_of_outputs()
-{
-    dbgln("FIXME: Implement AudioNode::number_of_outputs()");
-    return 0;
-}
-
 // https://webaudio.github.io/web-audio-api/#dom-audionode-channelcount
 WebIDL::ExceptionOr<void> AudioNode::set_channel_count(WebIDL::UnsignedLong channel_count)
 {
-    (void)channel_count;
-    return WebIDL::NotSupportedError::create(realm(), "FIXME: Implement AudioNode::set_channel_count(channel_count)"_fly_string);
-}
+    // If this value is set to zero or to a value greater than the implementation’s maximum number
+    // of channels the implementation MUST throw a NotSupportedError exception.
+    if (channel_count == 0 || channel_count > BaseAudioContext::MAX_NUMBER_OF_CHANNELS)
+        return WebIDL::NotSupportedError::create(realm(), "Invalid channel count"_string);
 
-// https://webaudio.github.io/web-audio-api/#dom-audionode-channelcount
-WebIDL::UnsignedLong AudioNode::channel_count()
-{
-    dbgln("FIXME: Implement AudioNode::channel_count()");
-    return 2;
+    m_channel_count = channel_count;
+    return {};
 }
 
 // https://webaudio.github.io/web-audio-api/#dom-audionode-channelcountmode

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2018-2024, Andreas Kling <andreas@ladybird.org>
- * Copyright (c) 2021-2024, Sam Atkins <atkinssj@serenityos.org>
+ * Copyright (c) 2021-2024, Sam Atkins <sam@ladybird.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  */
@@ -23,6 +23,7 @@
 #include <LibWeb/CSS/StyleValues/LengthStyleValue.h>
 #include <LibWeb/CSS/StyleValues/MathDepthStyleValue.h>
 #include <LibWeb/CSS/StyleValues/NumberStyleValue.h>
+#include <LibWeb/CSS/StyleValues/OpenTypeTaggedStyleValue.h>
 #include <LibWeb/CSS/StyleValues/PercentageStyleValue.h>
 #include <LibWeb/CSS/StyleValues/PositionStyleValue.h>
 #include <LibWeb/CSS/StyleValues/RectStyleValue.h>
@@ -325,6 +326,12 @@ float StyleProperties::fill_opacity() const
     return resolve_opacity_value(*value);
 }
 
+Optional<CSS::StrokeLinecap> StyleProperties::stroke_linecap() const
+{
+    auto value = property(CSS::PropertyID::StrokeLinecap);
+    return keyword_to_stroke_linecap(value->to_keyword());
+}
+
 float StyleProperties::stroke_opacity() const
 {
     auto value = property(CSS::PropertyID::StrokeOpacity);
@@ -401,20 +408,24 @@ Optional<CSS::ImageRendering> StyleProperties::image_rendering() const
     return keyword_to_image_rendering(value->to_keyword());
 }
 
-CSS::Length StyleProperties::border_spacing_horizontal() const
+CSS::Length StyleProperties::border_spacing_horizontal(Layout::Node const& layout_node) const
 {
     auto value = property(CSS::PropertyID::BorderSpacing);
     if (value->is_length())
         return value->as_length().length();
+    if (value->is_math())
+        return value->as_math().resolve_length(layout_node).value_or(CSS::Length(0, CSS::Length::Type::Px));
     auto const& list = value->as_value_list();
     return list.value_at(0, false)->as_length().length();
 }
 
-CSS::Length StyleProperties::border_spacing_vertical() const
+CSS::Length StyleProperties::border_spacing_vertical(Layout::Node const& layout_node) const
 {
     auto value = property(CSS::PropertyID::BorderSpacing);
     if (value->is_length())
         return value->as_length().length();
+    if (value->is_math())
+        return value->as_math().resolve_length(layout_node).value_or(CSS::Length(0, CSS::Length::Type::Px));
     auto const& list = value->as_value_list();
     return list.value_at(1, false)->as_length().length();
 }
@@ -670,6 +681,25 @@ Optional<CSS::PointerEvents> StyleProperties::pointer_events() const
 {
     auto value = property(CSS::PropertyID::PointerEvents);
     return keyword_to_pointer_events(value->to_keyword());
+}
+
+Variant<LengthOrCalculated, NumberOrCalculated> StyleProperties::tab_size() const
+{
+    auto value = property(CSS::PropertyID::TabSize);
+    if (value->is_math()) {
+        auto& math_value = value->as_math();
+        if (math_value.resolves_to_length()) {
+            return LengthOrCalculated { math_value };
+        }
+        if (math_value.resolves_to_number()) {
+            return NumberOrCalculated { math_value };
+        }
+    }
+
+    if (value->is_length())
+        return LengthOrCalculated { value->as_length().length() };
+
+    return NumberOrCalculated { value->as_number().number() };
 }
 
 Optional<CSS::WhiteSpace> StyleProperties::white_space() const
@@ -1008,6 +1038,60 @@ Optional<FlyString> StyleProperties::font_language_override() const
     return {};
 }
 
+Optional<HashMap<FlyString, IntegerOrCalculated>> StyleProperties::font_feature_settings() const
+{
+    auto value = property(PropertyID::FontFeatureSettings);
+
+    if (value->is_keyword())
+        return {}; // normal
+
+    if (value->is_value_list()) {
+        auto const& feature_tags = value->as_value_list().values();
+        HashMap<FlyString, IntegerOrCalculated> result;
+        result.ensure_capacity(feature_tags.size());
+        for (auto const& tag_value : feature_tags) {
+            auto const& feature_tag = tag_value->as_open_type_tagged();
+
+            if (feature_tag.value()->is_integer()) {
+                result.set(feature_tag.tag(), feature_tag.value()->as_integer().value());
+            } else {
+                VERIFY(feature_tag.value()->is_math());
+                result.set(feature_tag.tag(), IntegerOrCalculated { feature_tag.value()->as_math() });
+            }
+        }
+        return result;
+    }
+
+    return {};
+}
+
+Optional<HashMap<FlyString, NumberOrCalculated>> StyleProperties::font_variation_settings() const
+{
+    auto value = property(CSS::PropertyID::FontVariationSettings);
+
+    if (value->is_keyword())
+        return {}; // normal
+
+    if (value->is_value_list()) {
+        auto const& axis_tags = value->as_value_list().values();
+        HashMap<FlyString, NumberOrCalculated> result;
+        result.ensure_capacity(axis_tags.size());
+        for (auto const& tag_value : axis_tags) {
+            auto const& axis_tag = tag_value->as_open_type_tagged();
+
+            if (axis_tag.value()->is_number()) {
+                result.set(axis_tag.tag(), axis_tag.value()->as_number().value());
+            } else {
+                VERIFY(axis_tag.value()->is_math());
+                result.set(axis_tag.tag(), NumberOrCalculated { axis_tag.value()->as_math() });
+            }
+        }
+        return result;
+    }
+
+    return {};
+}
+
 CSS::GridTrackSizeList StyleProperties::grid_auto_columns() const
 {
     auto value = property(CSS::PropertyID::GridAutoColumns);
@@ -1113,6 +1197,12 @@ Optional<CSS::Direction> StyleProperties::direction() const
 {
     auto value = property(CSS::PropertyID::Direction);
     return keyword_to_direction(value->to_keyword());
+}
+
+Optional<CSS::UnicodeBidi> StyleProperties::unicode_bidi() const
+{
+    auto value = property(CSS::PropertyID::UnicodeBidi);
+    return keyword_to_unicode_bidi(value->to_keyword());
 }
 
 Optional<CSS::MaskType> StyleProperties::mask_type() const

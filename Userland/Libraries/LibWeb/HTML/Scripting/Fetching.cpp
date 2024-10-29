@@ -42,9 +42,9 @@ PerformTheFetchHook create_perform_the_fetch_hook(JS::Heap& heap, Function<WebID
     return JS::create_heap_function(heap, move(function));
 }
 
-ScriptFetchOptions default_classic_script_fetch_options()
+ScriptFetchOptions default_script_fetch_options()
 {
-    // The default classic script fetch options are a script fetch options whose cryptographic nonce is the empty string,
+    // The default script fetch options are a script fetch options whose cryptographic nonce is the empty string,
     // integrity metadata is the empty string, parser metadata is "not-parser-inserted", credentials mode is "same-origin",
     // referrer policy is the empty string, and fetch priority is "auto".
     return ScriptFetchOptions {
@@ -424,7 +424,7 @@ WebIDL::ExceptionOr<void> fetch_classic_worker_script(URL::URL const& url, Envir
         auto mime_type_is_javascript = maybe_mime_type.has_value() && maybe_mime_type->is_javascript();
 
         if (response->url().has_value() && Fetch::Infrastructure::is_http_or_https_scheme(response->url()->scheme()) && !mime_type_is_javascript) {
-            auto mime_type_serialized = maybe_mime_type.has_value() ? MUST(maybe_mime_type->serialized()) : "unknown"_string;
+            auto mime_type_serialized = maybe_mime_type.has_value() ? maybe_mime_type->serialized() : "unknown"_string;
             dbgln("Invalid non-javascript mime type \"{}\" for worker script at {}", mime_type_serialized, response->url().value());
 
             // then run onComplete given null, and abort these steps.
@@ -520,7 +520,7 @@ WebIDL::ExceptionOr<JS::NonnullGCPtr<ClassicScript>> fetch_a_classic_worker_impo
     if (body_bytes.template has<Empty>() || body_bytes.template has<Fetch::Infrastructure::FetchAlgorithms::ConsumeBodyFailureTag>()
         || !Fetch::Infrastructure::is_ok_status(response->status())
         || !response->header_list()->extract_mime_type().has_value() || !response->header_list()->extract_mime_type()->is_javascript()) {
-        return WebIDL::NetworkError::create(realm, "Network error"_fly_string);
+        return WebIDL::NetworkError::create(realm, "Network error"_string);
     }
 
     // 8. Let sourceText be the result of UTF-8 decoding bodyBytes.

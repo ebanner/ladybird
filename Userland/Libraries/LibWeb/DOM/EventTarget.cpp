@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, Andreas Kling <kling@serenityos.org>
+ * Copyright (c) 2020-2022, Andreas Kling <andreas@ladybird.org>
  * Copyright (c) 2022, Luke Wilde <lukew@serenityos.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
@@ -16,6 +16,7 @@
 #include <LibWeb/Bindings/EventTargetPrototype.h>
 #include <LibWeb/Bindings/MainThreadVM.h>
 #include <LibWeb/DOM/AbortSignal.h>
+#include <LibWeb/DOM/BeforeUnloadEvent.h>
 #include <LibWeb/DOM/DOMEventListener.h>
 #include <LibWeb/DOM/Document.h>
 #include <LibWeb/DOM/Event.h>
@@ -259,10 +260,10 @@ WebIDL::ExceptionOr<bool> EventTarget::dispatch_event_binding(Event& event)
 {
     // 1. If event’s dispatch flag is set, or if its initialized flag is not set, then throw an "InvalidStateError" DOMException.
     if (event.dispatched())
-        return WebIDL::InvalidStateError::create(realm(), "The event is already being dispatched."_fly_string);
+        return WebIDL::InvalidStateError::create(realm(), "The event is already being dispatched."_string);
 
     if (!event.initialized())
-        return WebIDL::InvalidStateError::create(realm(), "Cannot dispatch an uninitialized event."_fly_string);
+        return WebIDL::InvalidStateError::create(realm(), "Cannot dispatch an uninitialized event."_string);
 
     // 2. Initialize event’s isTrusted attribute to false.
     event.set_is_trusted(false);
@@ -645,8 +646,7 @@ JS::ThrowCompletionOr<void> EventTarget::process_event_handler_for_event(FlyStri
 
     // 3. Let special error event handling be true if event is an ErrorEvent object, event's type is error, and event's currentTarget implements the WindowOrWorkerGlobalScope mixin.
     //    Otherwise, let special error event handling be false.
-    // FIXME: This doesn't check for WorkerGlobalScape as we don't currently have it.
-    bool special_error_event_handling = is<HTML::ErrorEvent>(event) && event.type() == HTML::EventNames::error && is<HTML::Window>(event.current_target().ptr());
+    bool special_error_event_handling = is<HTML::ErrorEvent>(event) && event.type() == HTML::EventNames::error && is<HTML::WindowOrWorkerGlobalScopeMixin>(event.current_target().ptr());
 
     // 4. Process the Event object event as follows:
     JS::Completion return_value_or_error;
@@ -690,10 +690,20 @@ JS::ThrowCompletionOr<void> EventTarget::process_event_handler_for_event(FlyStri
     // FIXME: Ideally, invoke_callback would convert JS::Value to the appropriate return type for us as per the spec, but it doesn't currently.
     auto return_value = *return_value_or_error.value();
 
-    // FIXME: If event is a BeforeUnloadEvent object and event's type is beforeunload
-    //          If return value is not null, then: (NOTE: When implementing, if we still return a JS::Value from invoke_callback, use is_nullish instead of is_null, as "null" refers to IDL null, which is JS null or undefined)
-    //              1. Set event's canceled flag.
-    //              2. If event's returnValue attribute's value is the empty string, then set event's returnValue attribute's value to return value.
+    // 5. Process return value as follows:
+    if (is<BeforeUnloadEvent>(event) && event.type() == "beforeunload") {
+        // ->  If event is a BeforeUnloadEvent object and event's type is "beforeunload"
+        //         If return value is not null, then:
+        if (!return_value.is_nullish()) {
+            // 1. Set event's canceled flag.
+            event.set_cancelled(true);
+
+            // 2. If event's returnValue attribute's value is the empty string, then set event's returnValue attribute's value to return value.
+            auto& before_unload_event = static_cast<BeforeUnloadEvent&>(event);
+            if (before_unload_event.return_value().is_empty())
+                before_unload_event.set_return_value(TRY(return_value.to_string(vm())));
+        }
+    }
 
     if (special_error_event_handling) {
         // -> If special error event handling is true

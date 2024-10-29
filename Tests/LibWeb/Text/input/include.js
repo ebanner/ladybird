@@ -19,7 +19,7 @@ function __finishTest() {
     if (__originalURL) {
         internals.spoofCurrentURL(__originalURL);
     }
-    internals.signalTextTestIsDone();
+    internals.signalTextTestIsDone(__outputElement.innerText);
 }
 
 function spoofCurrentURL(url) {
@@ -50,6 +50,20 @@ function timeout(ms) {
     const { promise, resolve } = Promise.withResolvers();
     setTimeout(resolve, ms);
     return promise;
+}
+
+const __testErrorHandlerController = new AbortController();
+window.addEventListener(
+    "error",
+    event => {
+        println(`Uncaught Error In Test: ${event.message}`);
+        __finishTest();
+    },
+    { signal: __testErrorHandlerController.signal }
+);
+
+function removeTestErrorHandler() {
+    __testErrorHandlerController.abort();
 }
 
 document.addEventListener("DOMContentLoaded", function () {

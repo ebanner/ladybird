@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2022, Andreas Kling <kling@serenityos.org>
+ * Copyright (c) 2018-2022, Andreas Kling <andreas@ladybird.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  */
@@ -97,6 +97,7 @@ private:
     virtual void did_receive_focus() override;
 
     [[nodiscard]] String get_the_text_steps();
+    void append_rendered_text_fragment(StringView input);
 
     JS::GCPtr<DOMStringMap> m_dataset;
 

@@ -47,6 +47,7 @@ set(SOURCES
     CSS/CSSLayerBlockRule.cpp
     CSS/CSSLayerStatementRule.cpp
     CSS/CSSMediaRule.cpp
+    CSS/CSSNestedDeclarations.cpp
     CSS/CSSNumericType.cpp
     CSS/CSSNamespaceRule.cpp
     CSS/CSSRule.cpp
@@ -72,20 +73,16 @@ set(SOURCES
     CSS/MediaQuery.cpp
     CSS/MediaQueryList.cpp
     CSS/MediaQueryListEvent.cpp
-    CSS/Parser/Block.cpp
     CSS/Parser/ComponentValue.cpp
-    CSS/Parser/Declaration.cpp
-    CSS/Parser/DeclarationOrAtRule.cpp
-    CSS/Parser/Function.cpp
     CSS/Parser/GradientParsing.cpp
     CSS/Parser/Helpers.cpp
     CSS/Parser/MediaParsing.cpp
     CSS/Parser/Parser.cpp
     CSS/Parser/ParsingContext.cpp
-    CSS/Parser/Rule.cpp
     CSS/Parser/SelectorParsing.cpp
     CSS/Parser/Token.cpp
     CSS/Parser/Tokenizer.cpp
+    CSS/Parser/Types.cpp
     CSS/ParsedFontFace.cpp
     CSS/PercentageOr.cpp
     CSS/PreferredColorScheme.cpp
@@ -139,6 +136,7 @@ set(SOURCES
     CSS/StyleValues/LinearGradientStyleValue.cpp
     CSS/StyleValues/MathDepthStyleValue.cpp
     CSS/StyleValues/NumberStyleValue.cpp
+    CSS/StyleValues/OpenTypeTaggedStyleValue.cpp
     CSS/StyleValues/PositionStyleValue.cpp
     CSS/StyleValues/RadialGradientStyleValue.cpp
     CSS/StyleValues/RectStyleValue.cpp
@@ -162,6 +160,7 @@ set(SOURCES
     DOM/AccessibilityTreeNode.cpp
     DOM/AdoptedStyleSheets.cpp
     DOM/Attr.cpp
+    DOM/BeforeUnloadEvent.cpp
     DOM/CDATASection.cpp
     DOM/CharacterData.cpp
     DOM/Comment.cpp
@@ -217,6 +216,7 @@ set(SOURCES
     Encoding/TextDecoder.cpp
     Encoding/TextEncoder.cpp
     EntriesAPI/FileSystemEntry.cpp
+    EventTiming/PerformanceEventTiming.cpp
     Fetch/Body.cpp
     Fetch/BodyInit.cpp
     Fetch/Enums.cpp
@@ -416,7 +416,6 @@ set(SOURCES
     HTML/NavigatorBeacon.cpp
     HTML/NavigatorID.cpp
     HTML/Numbers.cpp
-    HTML/Origin.cpp
     HTML/PageTransitionEvent.cpp
     HTML/PolicyContainers.cpp
     HTML/PopStateEvent.cpp
@@ -585,7 +584,6 @@ set(SOURCES
     Painting/DisplayListRecorder.cpp
     Painting/GradientPainting.cpp
     Painting/ImagePaintable.cpp
-    Painting/InlinePaintable.cpp
     Painting/LabelablePaintable.cpp
     Painting/MarkerPaintable.cpp
     Painting/MediaPaintable.cpp
@@ -604,6 +602,7 @@ set(SOURCES
     Painting/SVGClipPaintable.cpp
     Painting/SVGPaintable.cpp
     Painting/SVGSVGPaintable.cpp
+    Painting/ScrollFrame.cpp
     Painting/ShadowPainting.cpp
     Painting/StackingContext.cpp
     Painting/TableBordersPainting.cpp
@@ -632,6 +631,9 @@ set(SOURCES
     ResizeObserver/ResizeObserverEntry.cpp
     ResizeObserver/ResizeObserverSize.cpp
     SecureContexts/AbstractOperations.cpp
+    ServiceWorker/Job.cpp
+    ServiceWorker/Registration.cpp
+    ServiceWorker/ServiceWorker.cpp
     SRI/SRI.cpp
     StorageAPI/NavigatorStorage.cpp
     StorageAPI/StorageKey.cpp
@@ -702,11 +704,14 @@ set(SOURCES
     SVG/TagNames.cpp
     SVG/ViewBox.cpp
     Selection/Selection.cpp
+    UIEvents/CompositionEvent.cpp
     UIEvents/EventNames.cpp
     UIEvents/FocusEvent.cpp
+    UIEvents/InputEvent.cpp
     UIEvents/KeyboardEvent.cpp
     UIEvents/MouseEvent.cpp
     UIEvents/PointerEvent.cpp
+    UIEvents/TextEvent.cpp
     UIEvents/UIEvent.cpp
     UIEvents/WheelEvent.cpp
     UserTiming/PerformanceMark.cpp
@@ -720,6 +725,7 @@ set(SOURCES
     WebAudio/AudioBufferSourceNode.cpp
     WebAudio/AudioContext.cpp
     WebAudio/AudioDestinationNode.cpp
+    WebAudio/AudioListener.cpp
     WebAudio/AudioNode.cpp
     WebAudio/AudioParam.cpp
     WebAudio/AudioScheduledSourceNode.cpp
@@ -730,6 +736,7 @@ set(SOURCES
     WebAudio/OfflineAudioContext.cpp
     WebAudio/OscillatorNode.cpp
     WebAudio/PeriodicWave.cpp
+    WebDriver/Actions.cpp
     WebDriver/Capabilities.cpp
     WebDriver/Client.cpp
     WebDriver/Contexts.cpp
@@ -737,6 +744,8 @@ set(SOURCES
     WebDriver/ElementReference.cpp
     WebDriver/Error.cpp
     WebDriver/ExecuteScript.cpp
+    WebDriver/InputSource.cpp
+    WebDriver/InputState.cpp
     WebDriver/Response.cpp
     WebDriver/Screenshot.cpp
     WebDriver/TimeoutsConfiguration.cpp

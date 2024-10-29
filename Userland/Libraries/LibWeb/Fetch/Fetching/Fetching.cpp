@@ -152,7 +152,7 @@ WebIDL::ExceptionOr<JS::NonnullGCPtr<Infrastructure::FetchController>> fetch(JS:
         // - request’s unsafe-request flag is not set or request’s header list is empty
         && (!request.unsafe_request() || request.header_list()->is_empty())) {
         // 1. Assert: request’s origin is same origin with request’s client’s origin.
-        VERIFY(request.origin().has<HTML::Origin>() && request.origin().get<HTML::Origin>().is_same_origin(request.client()->origin()));
+        VERIFY(request.origin().has<URL::Origin>() && request.origin().get<URL::Origin>().is_same_origin(request.client()->origin()));
 
         // 2. Let onPreloadedResponseAvailable be an algorithm that runs the following step given a response
         //    response: set fetchParams’s preloaded response candidate to response.
@@ -353,7 +353,7 @@ WebIDL::ExceptionOr<JS::GCPtr<PendingResponse>> main_fetch(JS::Realm& realm, Inf
         // -> request’s current URL’s scheme is "data"
         // -> request’s mode is "navigate" or "websocket"
         else if (
-            (request->origin().has<HTML::Origin>() && DOMURL::url_origin(request->current_url()).is_same_origin(request->origin().get<HTML::Origin>()) && request->response_tainting() == Infrastructure::Request::ResponseTainting::Basic)
+            (request->origin().has<URL::Origin>() && request->current_url().origin().is_same_origin(request->origin().get<URL::Origin>()) && request->response_tainting() == Infrastructure::Request::ResponseTainting::Basic)
             || request->current_url().scheme() == "data"sv
             || (request->mode() == Infrastructure::Request::Mode::Navigate || request->mode() == Infrastructure::Request::Mode::WebSocket)) {
             // 1. Set request’s response tainting to "basic".
@@ -836,7 +836,7 @@ WebIDL::ExceptionOr<JS::NonnullGCPtr<PendingResponse>> scheme_fetch(JS::Realm& r
         auto full_length = blob->size();
 
         // 6. Let serializedFullLength be fullLength, serialized and isomorphic encoded.
-        auto serialized_full_length = TRY_OR_THROW_OOM(vm, String::number(full_length));
+        auto serialized_full_length = String::number(full_length);
 
         // 7. Let type be blob’s type.
         auto const& type = blob->type();
@@ -901,7 +901,7 @@ WebIDL::ExceptionOr<JS::NonnullGCPtr<PendingResponse>> scheme_fetch(JS::Realm& r
             return PendingResponse::create(vm, request, Infrastructure::Response::network_error(vm, "Failed to process 'data:' URL"sv));
 
         // 3. Let mimeType be dataURLStruct’s MIME type, serialized.
-        auto const& mime_type = MUST(data_url_struct.value().mime_type.serialized());
+        auto const& mime_type = data_url_struct.value().mime_type.serialized();
 
         // 4. Return a new response whose status message is `OK`, header list is « (`Content-Type`, mimeType) », and
         //    body is dataURLStruct’s body as a body.
@@ -919,7 +919,7 @@ WebIDL::ExceptionOr<JS::NonnullGCPtr<PendingResponse>> scheme_fetch(JS::Realm& r
     else if (request->current_url().scheme() == "file"sv || request->current_url().scheme() == "resource"sv) {
         // For now, unfortunate as it is, file: URLs are left as an exercise for the reader.
         // When in doubt, return a network error.
-        if (request->origin().has<HTML::Origin>() && (request->origin().get<HTML::Origin>().is_opaque() || request->origin().get<HTML::Origin>().scheme() == "file"sv || request->origin().get<HTML::Origin>().scheme() == "resource"sv))
+        if (request->origin().has<URL::Origin>() && (request->origin().get<URL::Origin>().is_opaque() || request->origin().get<URL::Origin>().scheme() == "file"sv || request->origin().get<URL::Origin>().scheme() == "resource"sv))
             return TRY(nonstandard_resource_loader_file_or_http_network_fetch(realm, fetch_params));
         else
             return PendingResponse::create(vm, request, Infrastructure::Response::network_error(vm, "Request with 'file:' or 'resource:' URL blocked"sv));
@@ -1200,8 +1200,8 @@ WebIDL::ExceptionOr<JS::GCPtr<PendingResponse>> http_redirect_fetch(JS::Realm& r
     //    locationURL’s origin, then return a network error.
     if (request->mode() == Infrastructure::Request::Mode::CORS
         && location_url.includes_credentials()
-        && request->origin().has<HTML::Origin>()
-        && !request->origin().get<HTML::Origin>().is_same_origin(DOMURL::url_origin(location_url))) {
+        && request->origin().has<URL::Origin>()
+        && !request->origin().get<URL::Origin>().is_same_origin(location_url.origin())) {
         return PendingResponse::create(vm, request, Infrastructure::Response::network_error(vm, "Request with 'cors' mode and different URL and request origin must not include credentials in redirect URL"sv));
     }
 
@@ -1244,7 +1244,7 @@ WebIDL::ExceptionOr<JS::GCPtr<PendingResponse>> http_redirect_fetch(JS::Realm& r
     // 13. If request’s current URL’s origin is not same origin with locationURL’s origin, then for each headerName of
     //     CORS non-wildcard request-header name, delete headerName from request’s header list.
     // NOTE: I.e., the moment another origin is seen after the initial request, the `Authorization` header is removed.
-    if (!DOMURL::url_origin(request->current_url()).is_same_origin(DOMURL::url_origin(location_url))) {
+    if (!request->current_url().origin().is_same_origin(location_url.origin())) {
         static constexpr Array cors_non_wildcard_request_header_names {
             "Authorization"sv
         };
@@ -1627,7 +1627,7 @@ WebIDL::ExceptionOr<JS::NonnullGCPtr<PendingResponse>> http_network_or_cache_fet
         // 8. If contentLength is non-null, then set contentLengthHeaderValue to contentLength, serialized and
         //    isomorphic encoded.
         if (content_length.has_value())
-            content_length_header_value = MUST(ByteBuffer::copy(TRY_OR_THROW_OOM(vm, String::number(*content_length)).bytes()));
+            content_length_header_value = MUST(ByteBuffer::copy(String::number(*content_length).bytes()));
 
         // 9. If contentLengthHeaderValue is non-null, then append (`Content-Length`, contentLengthHeaderValue) to
         //    httpRequest’s header list.
@@ -2578,7 +2578,7 @@ void set_sec_fetch_site_header(Infrastructure::Request& request)
     if (!header_value.equals_ignoring_ascii_case("none"sv)) {
         for (auto& url : request.url_list()) {
             // 1. If url is same origin with r’s origin, continue.
-            if (DOMURL::url_origin(url).is_same_origin(DOMURL::url_origin(request.current_url())))
+            if (url.origin().is_same_origin(request.current_url().origin()))
                 continue;
 
             // 2. Set header’s value to cross-site.
